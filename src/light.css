@@ -1,0 +1,16 @@
+:root {
+  color-scheme: light;
+  /* 모든 폰트 Pretendard 적용 (astryx 폰트 토큰 오버라이드) */
+  --font-family-body: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --font-family-heading: "Pretendard", "Pretendard Variable", -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+html, body, #root { color-scheme: light; min-height: 100%; font-family: var(--font-family-body); }
+
+/* 로그인 화면 배경 — stone 웜 뉴트럴 그라데이션 */
+#root.login-bg {
+  background:
+    radial-gradient(340px at 82% 13%, rgba(37, 37, 42, 0.07), transparent 70%),
+    radial-gradient(400px at 15% 87%, rgba(37, 37, 42, 0.05), transparent 70%),
+    radial-gradient(190px at 44% 19%, rgba(131, 131, 138, 0.10), transparent 70%),
+    linear-gradient(135deg, #F5F5F7, #E4E4EA);
+}
