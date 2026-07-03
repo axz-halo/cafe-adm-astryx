@@ -13,6 +13,7 @@ const ASTRYX = [
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './', // GitHub Pages 서브경로에서도 자산 경로가 맞도록 상대 경로
   plugins: [react()],
   optimizeDeps: {
     include: [...ASTRYX, '@heroicons/react/24/outline', '@heroicons/react/24/solid', 'lucide-react', 'react', 'react-dom', 'react-dom/client'],
