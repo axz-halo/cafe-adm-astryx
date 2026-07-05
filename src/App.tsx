@@ -30,7 +30,7 @@ import { Thumbnail } from '@astryxdesign/core/Thumbnail';
 import {
   ArrowPathIcon, RocketLaunchIcon, Squares2X2Icon, QueueListIcon,
   FireIcon, RectangleStackIcon, ArrowTrendingUpIcon, CalendarDaysIcon, SparklesIcon,
-  ClipboardDocumentCheckIcon, NoSymbolIcon, ShieldExclamationIcon, FlagIcon, UsersIcon, HeartIcon,
+  ClipboardDocumentCheckIcon, NoSymbolIcon, ShieldExclamationIcon, FlagIcon, UsersIcon, HeartIcon, MagnifyingGlassIcon,
   DevicePhoneMobileIcon, PhotoIcon, BanknotesIcon, ChartBarIcon, KeyIcon, ClipboardDocumentListIcon,
   UserCircleIcon, ArrowRightStartOnRectangleIcon, BuildingStorefrontIcon,
 } from '@heroicons/react/24/outline';
@@ -40,6 +40,7 @@ import { Retro } from './views/Retro';
 import { Banner } from './views/Banner';
 import { Curation } from './views/Curation';
 import { Words, BlockList, ReviewQueue, Reports, Reco, Members, Fancafe, AppHome, Profit, Stats, Roles, DeployLog } from './views/Sections';
+import { Console360 } from './views/Console360';
 import { PageHeader } from './views/PageHeader';
 import { Triage } from './views/Triage';
 import LoginSSO from './app/login-sso/page';
@@ -56,6 +57,7 @@ const NAV = [
     { key: 'block', label: '노출제외 · 블랙 관리', icon: ShieldExclamationIcon }, { key: 'report', label: '신고 처리', count: '7', icon: FlagIcon },
   ]},
   { section: '관리', items: [
+    { key: 'search', label: '통합 검색 · 360', icon: MagnifyingGlassIcon },
     { key: 'members', label: '개별카페 · 회원 관리', icon: UsersIcon }, { key: 'fancafe', label: '팬카페 관리', icon: HeartIcon },
     { key: 'apphome', label: '모바일앱 · 카페 탑', icon: DevicePhoneMobileIcon }, { key: 'banner', label: '카페배너', icon: PhotoIcon },
   ]},
@@ -524,7 +526,7 @@ export default function App() {
         : view === 'category' ? <Curation />
         : view === 'trend' ? <Trend /> : view === 'retro' ? <Retro /> : view === 'banner' ? <Banner />
         : view === 'queue' ? <ReviewQueue /> : view === 'words' ? <Words /> : view === 'block' ? <BlockList /> : view === 'report' ? <Reports />
-        : view === 'reco' ? <Reco /> : view === 'members' ? <Members /> : view === 'fancafe' ? <Fancafe /> : view === 'apphome' ? <AppHome />
+        : view === 'reco' ? <Reco /> : view === 'search' ? <Console360 /> : view === 'members' ? <Members /> : view === 'fancafe' ? <Fancafe /> : view === 'apphome' ? <AppHome />
         : view === 'profit' ? <Profit /> : view === 'stat' ? <Stats /> : view === 'roles' ? <Roles /> : view === 'deploy' ? <DeployLog />
         : <Soon title={LABELS[view] ?? '섹션'} />}
     </AppShell>

@@ -32,11 +32,24 @@ export function Words() {
   const [tab, setTab] = useState('block');
   const [words, setWords] = useState<Record<string, string[]>>(Object.fromEntries(WORD_TABS.map((t) => [t.key, t.init])));
   const [input, setInput] = useState('');
+  const [sim, setSim] = useState('무료 쿠폰 도박 사이트 → bit.ly/deal');
+  const [deploy, setDeploy] = useState<'draft' | 'review' | 'live'>('live');
+  const [dirty, setDirty] = useState(false);
   const cur = WORD_TABS.find((t) => t.key === tab)!;
-  const add = () => { const v = input.trim(); if (v && !words[tab].includes(v)) setWords((w) => ({ ...w, [tab]: [...w[tab], v] })); setInput(''); };
+  const add = () => { const v = input.trim(); if (v && !words[tab].includes(v)) { setWords((w) => ({ ...w, [tab]: [...w[tab], v] })); setDirty(true); setDeploy('draft'); } setInput(''); };
+  const remove = (w: string) => { setWords((s) => ({ ...s, [tab]: s[tab].filter((x) => x !== w) })); setDirty(true); setDeploy('draft'); };
+
+  // 룰 시뮬레이터 — 차단어 매칭 + 화이트 예외 + AI 판별 병렬 (기존 "금칙어 테스트" 페이지 대체)
+  const t = sim.replace(/\s/g, '');
+  const matched = words.block.filter((w) => t.includes(w.replace(/\s/g, '')));
+  const excepted = words.white.filter((w) => sim.includes(w.split('(')[0]));
+  const hasLink = /https?:|bit\.ly|\.com/i.test(sim);
+  const aiScore = Math.min(99, matched.length * 40 + (hasLink ? 25 : 0) + (/무료|대박|지금/.test(sim) ? 15 : 0));
+  const aiLabel = aiScore >= 80 ? '차단 권고' : aiScore >= 50 ? '검수 권고' : '정상 추정';
+
   return (
     <VStack gap={5}>
-      <PageHeader title="금칙어 · 규제 키워드" description="기존 4개 분산 메뉴(차단어/화이트/조건부/인기글 규제) 통합 — 등록 즉시 전 서비스 반영"
+      <PageHeader title="금칙어 · 규제 키워드" description="기존 4개 분산 메뉴(차단어/화이트/조건부/인기글 규제) 통합 — '바로적용' 대신 draft → 리뷰 → 반영 버전 배포"
         actions={
           <SegmentedControl value={tab} onChange={setTab} label="유형" size="md">
             {WORD_TABS.map((t) => <SegmentedControlItem key={t.key} value={t.key} label={`${t.label} ${words[t.key].length}`} />)}
@@ -50,9 +63,45 @@ export function Words() {
             <Button label="추가" variant="secondary" size="sm" onClick={add} />
           </HStack>
           <HStack gap={2} wrap="wrap">
-            {words[tab].map((w) => <Token key={w} label={w} color={cur.color} size="sm" onRemove={() => setWords((s) => ({ ...s, [tab]: s[tab].filter((x) => x !== w) }))} />)}
+            {words[tab].map((w) => <Token key={w} label={w} color={cur.color} size="sm" onRemove={() => remove(w)} />)}
           </HStack>
         </VStack>
+      </Card>
+
+      {/* 룰 시뮬레이터 — 매칭 룰 + AI 판별 병렬 (기존 /word/block/testingBlockWord 대체) */}
+      <Card padding={5}>
+        <VStack gap={3}>
+          <HStack gap={2} vAlign="center"><Heading level={4}>룰 시뮬레이터</Heading><Text type="supporting" color="secondary">임의 텍스트로 차단 여부 사전 확인</Text></HStack>
+          <TextInput label="테스트 텍스트" isLabelHidden size="md" value={sim} onChange={setSim} placeholder="차단 여부를 확인할 문장 입력" />
+          <Grid columns={{ minWidth: 260 }} gap={3}>
+            <Card padding={4}>
+              <VStack gap={2}>
+                <Text type="label">룰 매칭</Text>
+                {matched.length === 0
+                  ? <Text type="supporting" color="secondary">매칭된 차단어 없음</Text>
+                  : <HStack gap={2} wrap="wrap">{matched.map((w) => <Token key={w} label={w} color="red" size="sm" />)}</HStack>}
+                {excepted.length > 0 && <Text type="supporting" color="secondary">화이트 예외: {excepted.join(', ')}</Text>}
+              </VStack>
+            </Card>
+            <Card padding={4}>
+              <VStack gap={2}>
+                <HStack gap={2} vAlign="center"><Text type="label">AI 판별</Text><Badge variant={aiScore >= 80 ? 'red' : aiScore >= 50 ? 'yellow' : 'green'} label={`AI ${aiScore} · ${aiLabel}`} /></HStack>
+                <Text type="supporting" color="secondary">룰 매칭과 AI 판별이 불일치하면 검수 큐로 보냅니다.</Text>
+              </VStack>
+            </Card>
+          </Grid>
+        </VStack>
+      </Card>
+
+      {/* 배포 상태 — "바로적용" 수동 버튼 대체 */}
+      <Card padding={4}>
+        <HStack gap={3} vAlign="center" wrap="wrap">
+          <Badge variant={deploy === 'live' ? 'success' : deploy === 'review' ? 'yellow' : 'neutral'} label={deploy === 'live' ? '반영됨' : deploy === 'review' ? '리뷰 중' : '초안(draft)'} />
+          <StackItem size="fill"><Text type="supporting" color="secondary">{dirty ? '미반영 변경 있음 — 리뷰어 1인 승인 후 반영 · 90일 diff 보관 · 롤백 가능' : '모든 변경이 반영된 상태입니다'}</Text></StackItem>
+          {deploy === 'draft' && <Button label="리뷰 요청" variant="secondary" size="sm" onClick={() => setDeploy('review')} />}
+          {deploy === 'review' && <Button label="반영 (승인 완료)" variant="primary" size="sm" onClick={() => { setDeploy('live'); setDirty(false); }} />}
+          {deploy === 'live' && dirty === false && <Button label="롤백" variant="ghost" size="sm" onClick={() => setDeploy('draft')} />}
+        </HStack>
       </Card>
     </VStack>
   );
@@ -205,31 +254,54 @@ export function Reports() {
   );
 }
 
-/* 5. 추천 컨텐츠 관리 — 큐레이션 라이트 (StarArticle 계열) */
-type RecoSlot = { name: string; target: number; items: string[] };
+/* 5. 추천 컨텐츠 관리 — 큐레이션 + AI 소재 검증 + CBT→실서버 스테이징 */
+type RecoStage = 'draft' | 'cbt' | 'live';
+type RecoSlot = { name: string; target: number; items: string[]; checks: { label: string; ok: boolean }[]; stage: RecoStage };
+const STAGE_LABEL: Record<RecoStage, string> = { draft: '초안', cbt: 'CBT 노출', live: '실서버 노출' };
 export function Reco() {
   const [slots, setSlots] = useState<RecoSlot[]>([
-    { name: '주간 추천 카페', target: 5, items: ['플랜테리어', '요리하는 자취생', '캠핑lovers'] },
-    { name: '에디터 픽 게시글', target: 8, items: ['자취 5년차 자취요리 10선', '초보 실내식물 추천', '편의점 라면 조합 끝판왕', '홈카페 분위기 내는 법', '다이소 수납 꿀템'] },
-    { name: '신규 카페 스포트라이트', target: 3, items: ['Backcountry Camping'] },
+    { name: '주간 추천 카페', target: 5, items: ['플랜테리어', '요리하는 자취생', '캠핑lovers'], checks: [{ label: '규격', ok: true }, { label: '금칙어', ok: true }, { label: '랜딩 URL', ok: true }], stage: 'live' },
+    { name: '에디터 픽 게시글', target: 8, items: ['자취 5년차 자취요리 10선', '초보 실내식물 추천', '편의점 라면 조합 끝판왕', '홈카페 분위기 내는 법', '다이소 수납 꿀템'], checks: [{ label: '규격', ok: true }, { label: '금칙어', ok: true }, { label: '랜딩 URL', ok: false }], stage: 'cbt' },
+    { name: '신규 카페 스포트라이트', target: 3, items: ['Backcountry Camping'], checks: [{ label: '규격', ok: true }, { label: '금칙어', ok: true }, { label: '랜딩 URL', ok: true }], stage: 'draft' },
   ]);
+  const setStage = (si: number, stage: RecoStage) => setSlots((all) => all.map((x, i) => (i === si ? { ...x, stage } : x)));
   return (
     <VStack gap={5}>
-      <PageHeader title="추천 컨텐츠 관리" description="추천 슬롯별 큐레이션 — 카테고리 인기글과 동일 워크플로 (StarArticle)" />
+      <PageHeader title="추천 컨텐츠 관리" description="추천 슬롯 큐레이션 + AI 소재 자동 검증(규격·금칙어·랜딩 URL) — 검증 실패 시 실서버 승격 차단, CBT→실서버 스테이징" />
       <Grid columns={{ minWidth: 280 }} gap={3}>
-        {slots.map((s, si) => (
-          <Card key={s.name} padding={4}>
-            <VStack gap={2}>
-              <HStack gap={2} vAlign="center"><Heading level={4}>{s.name}</Heading>{s.items.length >= s.target ? <Badge variant="green" label="완료" /> : <Badge variant="yellow" label={`${s.target - s.items.length} 부족`} />}</HStack>
-              <ProgressBar label={s.name} isLabelHidden value={s.items.length} max={s.target} variant={s.items.length >= s.target ? 'success' : 'accent'} />
-              <List density="compact" hasDividers>
-                {s.items.map((it) => (
-                  <ListItem key={it} label={it} endContent={<Button label="제외" variant="ghost" size="sm" onClick={() => setSlots((all) => all.map((x, i) => i === si ? { ...x, items: x.items.filter((y) => y !== it) } : x))} />} />
-                ))}
-              </List>
-            </VStack>
-          </Card>
-        ))}
+        {slots.map((s, si) => {
+          const checksOk = s.checks.every((c) => c.ok);
+          return (
+            <Card key={s.name} padding={4}>
+              <VStack gap={2}>
+                <HStack gap={2} vAlign="center" wrap="wrap">
+                  <Heading level={4}>{s.name}</Heading>
+                  <Badge variant={s.stage === 'live' ? 'green' : s.stage === 'cbt' ? 'yellow' : 'neutral'} label={STAGE_LABEL[s.stage]} />
+                  {s.items.length < s.target && <Badge variant="yellow" label={`${s.target - s.items.length} 부족`} />}
+                </HStack>
+                <ProgressBar label={s.name} isLabelHidden value={s.items.length} max={s.target} variant={s.items.length >= s.target ? 'success' : 'accent'} />
+                <List density="compact" hasDividers>
+                  {s.items.map((it) => (
+                    <ListItem key={it} label={it} endContent={<Button label="제외" variant="ghost" size="sm" onClick={() => setSlots((all) => all.map((x, i) => i === si ? { ...x, items: x.items.filter((y) => y !== it) } : x))} />} />
+                  ))}
+                </List>
+                <HStack gap={2} wrap="wrap" vAlign="center">
+                  <Text type="label" color="secondary">AI 검증</Text>
+                  {s.checks.map((c) => <Badge key={c.label} variant={c.ok ? 'green' : 'red'} label={`${c.label} ${c.ok ? '✓' : '실패'}`} />)}
+                </HStack>
+                {!checksOk && <Text type="supporting" color="secondary">검증 실패 항목이 있어 실서버 승격이 차단됩니다.</Text>}
+                <HStack gap={2}>
+                  {s.stage === 'draft' && <Button label="CBT 노출" variant="secondary" size="sm" onClick={() => setStage(si, 'cbt')} />}
+                  {s.stage === 'cbt' && <>
+                    <Button label="실서버 노출" variant="primary" size="sm" isDisabled={!checksOk} onClick={() => setStage(si, 'live')} />
+                    <Button label="초안으로" variant="ghost" size="sm" onClick={() => setStage(si, 'draft')} />
+                  </>}
+                  {s.stage === 'live' && <Button label="노출 종료" variant="secondary" size="sm" onClick={() => setStage(si, 'draft')} />}
+                </HStack>
+              </VStack>
+            </Card>
+          );
+        })}
       </Grid>
     </VStack>
   );
@@ -329,8 +401,75 @@ export function Fancafe() {
   );
 }
 
-/* 8. 모바일앱 · 카페 탑 — 지면 통합 (앱 이벤트/공지/버전 + 카페탑) */
+/* 8. 모바일앱 · 카페 탑 — 지면 통합 + 전체 푸시(캠페인 재설계) */
+type PushStage = 'draft' | 'tested' | 'approved' | 'scheduled' | 'done';
+const PUSH_STEPS: { key: PushStage; label: string }[] = [
+  { key: 'draft', label: '초안' }, { key: 'tested', label: '테스트 발송' }, { key: 'approved', label: '2인 승인' }, { key: 'scheduled', label: '예약' }, { key: 'done', label: '발송' },
+];
+function PushCampaign() {
+  const [stage, setStage] = useState<PushStage>('draft');
+  const [msg, setMsg] = useState('여름 인기글 특집이 도착했어요 ☀️');
+  const [target, setTarget] = useState('AOS');
+  const idx = PUSH_STEPS.findIndex((s) => s.key === stage);
+  const reach: Record<string, string> = { 전체: '482만', AOS: '291만', iOS: '191만' };
+  return (
+    <VStack gap={4}>
+      {/* 기존: 원클릭 즉시 전송 + 개인 비번 입력 → 캠페인 모델로 대체 */}
+      <Card padding={4}>
+        <HStack gap={3} vAlign="center" wrap="wrap">
+          {PUSH_STEPS.map((s, i) => (
+            <HStack key={s.key} gap={2} vAlign="center">
+              {i > 0 && <Text type="supporting" color="secondary">›</Text>}
+              <Badge variant={i < idx ? 'success' : i === idx ? 'blue' : 'neutral'} label={`${i + 1}. ${s.label}`} />
+            </HStack>
+          ))}
+          <StackItem size="fill" />
+          <Text type="supporting" color="secondary">개인 계정 비번 입력 제거 · SSO 위임 · 전체 발송 30분 예약 유예</Text>
+        </HStack>
+      </Card>
+      <Grid columns={{ minWidth: 300 }} gap={3}>
+        <Card padding={4}>
+          <VStack gap={3}>
+            <Heading level={4}>메시지 편집</Heading>
+            <TextInput label="푸시 메시지" size="sm" value={msg} onChange={setMsg} isDisabled={idx >= 2} />
+            <SegmentedControl value={target} onChange={setTarget} label="대상" size="sm" isDisabled={idx >= 2}>
+              {['전체', 'AOS', 'iOS'].map((t) => <SegmentedControlItem key={t} value={t} label={t} />)}
+            </SegmentedControl>
+            <Text type="supporting" color="secondary">예상 도달 {reach[target]}명{target === '전체' ? ' · 30분 예약 유예 적용' : ''}</Text>
+          </VStack>
+        </Card>
+        <Card padding={4}>
+          <VStack gap={3}>
+            <Heading level={4}>미리보기 · 진행</Heading>
+            <Card padding={3}><VStack gap={0}><Text weight="semibold">다음카페</Text><Text type="supporting">{msg}</Text></VStack></Card>
+            {stage === 'draft' && <Button label="테스트 발송 (내부 기기 3대)" variant="secondary" size="sm" onClick={() => setStage('tested')} />}
+            {stage === 'tested' && <VStack gap={2}>
+              <Text type="supporting" color="secondary">작성 halo.wave · 승인 approver.pi (작성자 ≠ 승인자)</Text>
+              <Button label="승인 요청" variant="primary" size="sm" onClick={() => setStage('approved')} />
+            </VStack>}
+            {stage === 'approved' && <VStack gap={2}>
+              <Badge variant="blue" label="예약 시각 21:30 (지금+45분)" />
+              <Button label="예약 확정" variant="primary" size="sm" onClick={() => setStage('scheduled')} />
+            </VStack>}
+            {stage === 'scheduled' && <VStack gap={2}>
+              <Badge variant="yellow" label="예약됨 · 21:30 발송 예정" />
+              <HStack gap={2}>
+                <Button label="지금 발송(테스트)" variant="primary" size="sm" onClick={() => setStage('done')} />
+                <Button label="예약 취소" variant="secondary" size="sm" onClick={() => setStage('approved')} />
+              </HStack>
+            </VStack>}
+            {stage === 'done' && <VStack gap={2}>
+              <Badge variant="success" label={`발송 완료 · 도달 ${reach[target]}명 · 실패 0`} />
+              <Button label="새 캠페인" variant="secondary" size="sm" onClick={() => setStage('draft')} />
+            </VStack>}
+          </VStack>
+        </Card>
+      </Grid>
+    </VStack>
+  );
+}
 export function AppHome() {
+  const [tab, setTab] = useState<'slots' | 'push'>('slots');
   const slots = [
     { title: '앱 이벤트 — 여름 출석체크', kind: '앱 이벤트', period: '07.01 ~ 07.31', state: '노출중' as const, chip: 'green' as BadgeVariant },
     { title: '앱 공지 — 개인정보 처리방침 개정', kind: '앱 공지', period: '06.25 ~ 07.10', state: '노출중' as const, chip: 'blue' as BadgeVariant },
@@ -341,18 +480,26 @@ export function AppHome() {
   ];
   return (
     <VStack gap={5}>
-      <PageHeader title="모바일앱 · 카페 탑" description="기존 4개 영역(앱 이벤트·앱 공지·앱 버전·카페탑) 지면 통합 — 카페배너와 동일 패턴" />
-      <Grid columns={{ minWidth: 280 }} gap={3}>
-        {slots.map((s) => (
-          <Card key={s.title} padding={4}>
-            <VStack gap={2}>
-              <HStack gap={1} vAlign="center"><Badge variant={s.chip} label={s.kind} /><Badge variant={s.state === '노출중' ? 'green' : s.state === '예약' ? 'blue' : 'neutral'} label={s.state} /></HStack>
-              <Text weight="medium" maxLines={2}>{s.title}</Text>
-              <Text type="supporting" color="secondary">기간 {s.period}</Text>
-            </VStack>
-          </Card>
-        ))}
-      </Grid>
+      <PageHeader title="모바일앱 · 카페 탑" description="지면 통합(앱 이벤트·공지·버전·카페탑) + 전체 푸시 재설계 — 기존 '클릭 즉시 전송·취소 불가' 제거"
+        actions={
+          <SegmentedControl value={tab} onChange={(v) => setTab(v as never)} label="영역" size="md">
+            <SegmentedControlItem value="slots" label="지면" />
+            <SegmentedControlItem value="push" label="전체 푸시" />
+          </SegmentedControl>
+        } />
+      {tab === 'slots' ? (
+        <Grid columns={{ minWidth: 280 }} gap={3}>
+          {slots.map((s) => (
+            <Card key={s.title} padding={4}>
+              <VStack gap={2}>
+                <HStack gap={1} vAlign="center"><Badge variant={s.chip} label={s.kind} /><Badge variant={s.state === '노출중' ? 'green' : s.state === '예약' ? 'blue' : 'neutral'} label={s.state} /></HStack>
+                <Text weight="medium" maxLines={2}>{s.title}</Text>
+                <Text type="supporting" color="secondary">기간 {s.period}</Text>
+              </VStack>
+            </Card>
+          ))}
+        </Grid>
+      ) : <PushCampaign />}
     </VStack>
   );
 }
@@ -369,8 +516,14 @@ const PROFIT_DATA: ProfitRow[] = [
 const won = (n: number) => '₩' + n.toLocaleString();
 export function Profit() {
   const [filter, setFilter] = useState('전체');
+  const [ackAnomaly, setAckAnomaly] = useState<Record<number, boolean>>({});
   const list = PROFIT_DATA.filter((r) => filter === '전체' || r.state === filter);
   const sum = (st: string) => PROFIT_DATA.filter((r) => st === '전체' || r.state === st).reduce((a, r) => a + r.amount, 0);
+  // 이상 알림 — 미정산 임박 소멸·진행 정체 자동 탐지 (화면 순회+엑셀 취합 → 상단 승격)
+  const anomalies = PROFIT_DATA.filter((r) => r.state === '미정산' && !ackAnomaly[r.id]);
+  // 유형별 피벗 — 연/월·CP/OS 분산 화면을 축 전환 하나로
+  const kinds = [...new Set(PROFIT_DATA.map((r) => r.kind))];
+  const byKind = kinds.map((k) => ({ k, total: PROFIT_DATA.filter((r) => r.kind === k).reduce((a, r) => a + r.amount, 0) }));
   const cols: TableColumn<ProfitRow>[] = [
     { key: 'partner', header: '파트너', width: proportional(1), renderCell: (r) => <Text weight="medium">{r.partner}</Text> },
     { key: 'kind', header: '유형', width: pixel(100), renderCell: (r) => <Badge variant="neutral" label={r.kind} /> },
@@ -387,11 +540,30 @@ export function Profit() {
           </SegmentedControl>
           <Button label="Excel 다운로드" variant="secondary" size="md" />
         </>} />
+      {anomalies.length > 0 && (
+        <Card padding={0}>
+          <List hasDividers density="balanced" header={<Heading level={4}>⚠ 정산 이상 알림 {anomalies.length}건</Heading>}>
+            {anomalies.map((r) => (
+              <ListItem key={r.id} label={`${r.partner} — 미정산 ${won(r.amount)}`} description="소멸 임박 · 30일 내 미처리 시 자동 소멸"
+                startContent={<Badge variant="red" label="임박" />}
+                endContent={<HStack gap={2}><Button label="정산 처리" variant="primary" size="sm" onClick={() => setAckAnomaly((a) => ({ ...a, [r.id]: true }))} /><Button label="보류" variant="ghost" size="sm" onClick={() => setAckAnomaly((a) => ({ ...a, [r.id]: true }))} /></HStack>} />
+            ))}
+          </List>
+        </Card>
+      )}
       <Grid columns={{ minWidth: 200 }} gap={3}>
         {([['이번 달 수익', sum('전체')], ['정산 완료', sum('정산 완료')], ['미정산', sum('미정산')]] as const).map(([l, v]) => (
           <Card key={l} padding={5}><VStack gap={1}><Text type="supporting">{l}</Text><Heading level={3}>{won(v)}</Heading></VStack></Card>
         ))}
       </Grid>
+      <VStack gap={2}>
+        <HStack gap={2} vAlign="center"><Heading level={4}>유형별 피벗</Heading><Text type="supporting" color="secondary">연/월·CP/OS 분산 화면 → 축 전환 하나로</Text></HStack>
+        <Grid columns={{ minWidth: 180 }} gap={3}>
+          {byKind.map(({ k, total }) => (
+            <Card key={k} padding={4}><VStack gap={1}><Badge variant="neutral" label={k} /><Heading level={4}>{won(total)}</Heading></VStack></Card>
+          ))}
+        </Grid>
+      </VStack>
       <Card padding={0}><Table<ProfitRow> data={list} columns={cols} idKey="id" density="balanced" dividers="rows" hasHover /></Card>
     </VStack>
   );
