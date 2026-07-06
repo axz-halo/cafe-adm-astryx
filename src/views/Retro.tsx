@@ -68,7 +68,7 @@ export function Retro() {
           </SegmentedControl>
         } />
 
-      {mode === 'mock' && <Banner status="warning" title="샘플 데이터" description="사내망/프록시(/api) 미연결 상태입니다. 실데이터는 사내망에서 표시됩니다." />}
+      {mode === 'mock' && <Banner status="warning" title="샘플 데이터" description="이 페이지는 사내망 API(/api)에 연결되지 않아 샘플로 표시됩니다. 실데이터는 사내망에 배포된 서버(예: :8080)로 접속하세요." />}
 
       {/* TOP 10 */}
       <VStack gap={2}>

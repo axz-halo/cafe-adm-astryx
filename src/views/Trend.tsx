@@ -81,7 +81,7 @@ export function Trend() {
             options={[{ value: 'all', label: '연령 전체' }, ...['10', '20', '30', '40', '50'].map((a) => ({ value: a, label: `${a}대` }))]} />
         </>} />
 
-      {mode === 'mock' && <Banner status="warning" title="샘플 데이터" description="사내망/프록시(/api) 미연결 상태입니다. 실데이터는 사내망에서 표시됩니다." />}
+      {mode === 'mock' && <Banner status="warning" title="샘플 데이터" description="이 페이지는 사내망 API(/api)에 연결되지 않아 샘플로 표시됩니다. 실데이터는 사내망에 배포된 서버(예: :8080)로 접속하세요." />}
       <Banner status="info" title="집계 기준" description="현재 시간대 실시간 인기글 제목의 키워드 출현 빈도 기준. 위험 키워드는 우측에서 트렌드 노출에서 제외합니다." />
 
       <HStack gap={4} vAlign="start" wrap="wrap">

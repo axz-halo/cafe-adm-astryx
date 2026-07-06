@@ -512,7 +512,7 @@ function Popular() {
               description={dataMode === 'live'
                 ? '/popular/article/daily — 조회수·댓글수·순위·썸네일 실시간 반영 (사내망)'
                 : dataMode === 'loading' ? '실데이터를 불러오는 중입니다…'
-                : '사내망/프록시 미연결 — 샘플 데이터로 표시 중입니다.'}
+                : '사내망 API(/api) 미연결 — 샘플 표시 중. 실데이터는 사내망 배포 서버로 접속하세요.'}
               actions={<>
                 <Button label="새로고침" variant="secondary" size="md" icon={<Icon icon={ArrowPathIcon} size="sm" />} onClick={() => setReloadKey((k) => k + 1)} />
                 <Button label="AI 일괄 분류" variant="secondary" size="md" icon={<Icon icon={SparklesIcon} size="sm" />} onClick={aiClassifyAll} />
