@@ -151,26 +151,28 @@ export function BlockList() {
 }
 
 /* 3. 검수 큐 — 기존 분산(게시글 삭제 처리/키워드 감지/핫게시글 알림) 통합 큐 */
-type QItem = { id: number; type: '삭제 요청' | '키워드 감지' | '핫게시글'; title: string; cafe: string; req: string; at: string };
+type QItem = { id: number; type: '삭제 요청' | '키워드 감지' | '핫게시글'; title: string; cafe: string; req: string; at: string; ai: number; reasons: string[]; sla: number };
 const Q_INIT: QItem[] = [
-  { id: 1, type: '삭제 요청', title: '개인정보 노출 게시글 삭제 요청', cafe: '여성시대', req: '카페지기', at: '10:41' },
-  { id: 2, type: '삭제 요청', title: '저작권 침해 이미지 포함 글', cafe: '도탁스', req: 'CS 이관', at: '10:22' },
-  { id: 3, type: '키워드 감지', title: '"불법대출" 포함 신규 글 (조건부 매칭)', cafe: '소주담(談)', req: '시스템', at: '10:05' },
-  { id: 4, type: '핫게시글', title: '급상승 글 — 신고 2건 동반', cafe: '이종격투기', req: '시스템', at: '09:58' },
-  { id: 5, type: '키워드 감지', title: '"성인광고" 포함 댓글 다수', cafe: '엽기혹은진실', req: '시스템', at: '09:30' },
-  { id: 6, type: '삭제 요청', title: '명예훼손 신고 게시글', cafe: '쭉빵카페', req: '카페지기', at: '09:12' },
+  { id: 1, type: '삭제 요청', title: '개인정보 노출 게시글 삭제 요청', cafe: '여성시대', req: '카페지기', at: '10:41', ai: 84, reasons: ['전화번호 패턴 감지', '주소 문자열 포함'], sla: 4 },
+  { id: 2, type: '삭제 요청', title: '저작권 침해 이미지 포함 글', cafe: '도탁스', req: 'CS 이관', at: '10:22', ai: 72, reasons: ['워터마크 이미지 유사', '권리사 신고 이력'], sla: 8 },
+  { id: 3, type: '키워드 감지', title: '"불법대출" 포함 신규 글 (조건부 매칭)', cafe: '소주담(談)', req: '시스템', at: '10:05', ai: 91, reasons: ['원천봉쇄 매칭', '외부 링크 포함', '반복 게시'], sla: 6 },
+  { id: 4, type: '핫게시글', title: '급상승 글 — 신고 2건 동반', cafe: '이종격투기', req: '시스템', at: '09:58', ai: 55, reasons: ['1시간 내 신고 2건', '유해성 중간'], sla: 20 },
+  { id: 5, type: '키워드 감지', title: '"성인광고" 포함 댓글 다수', cafe: '엽기혹은진실', req: '시스템', at: '09:30', ai: 88, reasons: ['성인 키워드 다수', '스팸 계정 추정'], sla: 12 },
+  { id: 6, type: '삭제 요청', title: '명예훼손 신고 게시글', cafe: '쭉빵카페', req: '카페지기', at: '09:12', ai: 48, reasons: ['사실확인 필요', '실명 언급'], sla: 18 },
 ];
 const Q_BADGE: Record<QItem['type'], BadgeVariant> = { '삭제 요청': 'red', '키워드 감지': 'yellow', '핫게시글': 'blue' };
+const aiVariant = (n: number): BadgeVariant => (n >= 80 ? 'red' : n >= 50 ? 'yellow' : 'green');
 export function ReviewQueue() {
   const [filter, setFilter] = useState<'전체' | QItem['type']>('전체');
   const [items, setItems] = useState(Q_INIT);
   const [done, setDone] = useState(0);
-  const list = items.filter((i) => filter === '전체' || i.type === filter);
+  // AI 스코어 높은 순 = 위험 우선 (전량 육안 → AI 1차 + 예외 검수)
+  const list = items.filter((i) => filter === '전체' || i.type === filter).sort((a, b) => b.ai - a.ai);
   const handle = (id: number) => { setItems((s) => s.filter((x) => x.id !== id)); setDone((d) => d + 1); };
   return (
     <VStack gap={5}>
-      <PageHeader title="검수 큐" meta={<Badge variant="yellow" label={`대기 ${items.length}`} />}
-        description="기존 분산 검수 업무(게시글 삭제 처리 · 키워드 모니터링 · 핫게시글 알림) 통합 큐 — 처리 시 즉시 제거"
+      <PageHeader title="검수 큐" meta={<><Badge variant="yellow" label={`대기 ${items.length}`} /><Badge variant="red" label={`SLA 임박 ${items.filter((i) => i.sla <= 6).length}`} /></>}
+        description="AI 1차 스코어링 우선순위 큐 — 게시글 삭제·키워드 감지·핫게시글 통합. 판정 결과는 AI 재학습에 태깅"
         actions={
           <SegmentedControl value={filter} onChange={(v) => setFilter(v as never)} label="유형" size="md">
             {(['전체', '삭제 요청', '키워드 감지', '핫게시글'] as const).map((t) => <SegmentedControlItem key={t} value={t} label={t} />)}
@@ -180,9 +182,9 @@ export function ReviewQueue() {
       <Card padding={0}>
         <List hasDividers density="balanced">
           {list.map((i) => (
-            <ListItem key={i.id} label={i.title} description={`${i.cafe} · ${i.req} · ${i.at}`}
-              startContent={<Badge variant={Q_BADGE[i.type]} label={i.type} />}
-              endContent={<HStack gap={2}><Button label="승인" variant="primary" size="sm" onClick={() => handle(i.id)} /><Button label="반려" variant="secondary" size="sm" onClick={() => handle(i.id)} /></HStack>} />
+            <ListItem key={i.id} label={i.title} description={`${i.cafe} · ${i.req} · ${i.at} · ${i.reasons.join(' · ')}`}
+              startContent={<VStack gap={1}><Badge variant={aiVariant(i.ai)} label={`AI ${i.ai}`} /><Badge variant={Q_BADGE[i.type]} label={i.type} /></VStack>}
+              endContent={<HStack gap={2} vAlign="center">{i.sla <= 6 && <Badge variant="red" label={`SLA ${i.sla}h`} />}<Button label="승인" variant="primary" size="sm" onClick={() => handle(i.id)} /><Button label="반려" variant="secondary" size="sm" onClick={() => handle(i.id)} /><Button label="에스컬레이션" variant="ghost" size="sm" onClick={() => handle(i.id)} /></HStack>} />
           ))}
         </List>
         {list.length === 0 && <Card padding={6}><Text type="supporting" color="secondary">대기 항목이 없습니다 🎉</Text></Card>}
@@ -374,10 +376,28 @@ const FAN_INIT: Fan[] = [
   { id: 4, name: '에스파 마이', artist: '에스파', grade: '인증', state: '운영중', owner: 'yerin.axz', members: '19만' },
   { id: 5, name: '(구)추억의 팬카페', artist: '-', grade: '일반', state: '휴면', owner: '-', members: '0.3만' },
 ];
+// 일일 랭킹 (/fancafe/daily/ranking — 응원위젯 클릭·활동 종합)
+type FanRank = { rank: number; star: string; cafe: string; members: string; posts: number; cheer: number; score: number };
+const FAN_RANKING: FanRank[] = [
+  { rank: 1, star: '임영웅', cafe: '임영웅 공식', members: '42만', posts: 3204, cheer: 89200, score: 98 },
+  { rank: 2, star: '아이유', cafe: '아이유 유애나', members: '31만', posts: 2180, cheer: 76400, score: 95 },
+  { rank: 3, star: '에스파', cafe: '에스파 마이', members: '19만', posts: 4120, cheer: 71050, score: 93 },
+  { rank: 4, star: '우정잉', cafe: '우정잉 팬까페 잉친쓰', members: '8.1만', posts: 1540, cheer: 44900, score: 88 },
+  { rank: 5, star: '손흥민', cafe: '손흥민 월클', members: '6.2만', posts: 1980, cheer: 39800, score: 85 },
+];
+// 스타게시판 대표 글 (/fancafe/star/article)
+const STAR_ARTICLES = [
+  { id: 1, star: '임영웅', title: '콘서트 후기 + 직캠 모음', at: '07-05', featured: true },
+  { id: 2, star: '아이유', title: '신곡 뮤비 비하인드 반응', at: '07-05', featured: true },
+  { id: 3, star: '에스파', title: '컴백 D-3 티저 정리', at: '07-04', featured: false },
+  { id: 4, star: '우정잉', title: '팬미팅 공지 및 신청 안내', at: '07-03', featured: false },
+];
 export function Fancafe() {
+  const [tab, setTab] = useState<'list' | 'ranking' | 'star'>('list');
   const [rows, setRows] = useState(FAN_INIT);
   const [q, setQ] = useState('');
   const [grade, setGrade] = useState('전체');
+  const [featured, setFeatured] = useState<Record<number, boolean>>(Object.fromEntries(STAR_ARTICLES.map((a) => [a.id, a.featured])));
   const list = rows.filter((f) => (grade === '전체' || f.grade === grade) && (!q.trim() || f.name.includes(q.trim()) || f.artist.includes(q.trim())));
   const toggle = (id: number) => setRows((s) => s.map((f) => f.id === id ? { ...f, state: f.state === '정지' ? '운영중' : '정지' } : f));
   const cols: TableColumn<Fan>[] = [
@@ -387,16 +407,51 @@ export function Fancafe() {
     { key: 'owner', header: '담당', width: pixel(100), renderCell: (f) => <Text type="supporting" color="accent">{f.owner}</Text> },
     { key: 'act', header: '', width: pixel(90), align: 'end', renderCell: (f) => <Button label={f.state === '정지' ? '해제' : '정지'} variant="secondary" size="sm" onClick={() => toggle(f.id)} /> },
   ];
+  const rankCols: TableColumn<FanRank>[] = [
+    { key: 'rank', header: '순위', width: pixel(56), renderCell: (r) => <Badge variant={r.rank <= 3 ? 'purple' : 'neutral'} label={`${r.rank}위`} /> },
+    { key: 'star', header: '스타', width: proportional(1), renderCell: (r) => <VStack gap={0}><Text weight="medium">{r.star}</Text><Text type="supporting" color="secondary">{r.cafe}</Text></VStack> },
+    { key: 'members', header: '가입자', width: pixel(80), align: 'end', renderCell: (r) => <Text type="supporting">{r.members}</Text> },
+    { key: 'posts', header: '게시글', width: pixel(80), align: 'end', renderCell: (r) => <Text type="supporting">{r.posts.toLocaleString()}</Text> },
+    { key: 'cheer', header: '응원 클릭', width: pixel(90), align: 'end', renderCell: (r) => <Text type="supporting">{r.cheer.toLocaleString()}</Text> },
+    { key: 'score', header: '총점', width: pixel(70), align: 'end', renderCell: (r) => <Badge variant="green" label={String(r.score)} /> },
+  ];
   return (
     <VStack gap={5}>
-      <PageHeader title="팬카페 관리" description="공식·인증 팬카페 상태/컨텐츠 관리 (/fancafe — 공식카페 B2B 확장 대비)"
+      <PageHeader title="팬카페 관리" description="목록 · 일일 랭킹(응원위젯) · 스타게시판 대표 글 — 기존 fancafe/* 9개 메뉴 통합 (공식카페 B2B 확장 대비)"
         actions={
-          <SegmentedControl value={grade} onChange={setGrade} label="등급" size="md">
-            {['전체', '공식', '인증', '일반'].map((g) => <SegmentedControlItem key={g} value={g} label={g} />)}
+          <SegmentedControl value={tab} onChange={(v) => setTab(v as never)} label="영역" size="md">
+            <SegmentedControlItem value="list" label="팬카페 목록" />
+            <SegmentedControlItem value="ranking" label="일일 랭킹" />
+            <SegmentedControlItem value="star" label="스타 글" />
           </SegmentedControl>
         } />
-      <HStack gap={2} vAlign="center"><StackItem size="fill"><TextInput label="팬카페 검색" isLabelHidden size="md" value={q} onChange={setQ} /></StackItem><Text type="supporting" color="secondary">{list.length}건</Text></HStack>
-      <Card padding={0}><Table<Fan> data={list} columns={cols} idKey="id" density="balanced" dividers="rows" hasHover /></Card>
+      {tab === 'list' && <>
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <SegmentedControl value={grade} onChange={setGrade} label="등급" size="sm">
+            {['전체', '공식', '인증', '일반'].map((g) => <SegmentedControlItem key={g} value={g} label={g} />)}
+          </SegmentedControl>
+          <StackItem size="fill"><TextInput label="팬카페 검색" isLabelHidden size="md" value={q} onChange={setQ} /></StackItem>
+          <Text type="supporting" color="secondary">{list.length}건</Text>
+        </HStack>
+        <Card padding={0}><Table<Fan> data={list} columns={cols} idKey="id" density="balanced" dividers="rows" hasHover /></Card>
+      </>}
+      {tab === 'ranking' && <>
+        <Card padding={0}><Table<FanRank> data={FAN_RANKING} columns={rankCols} idKey="rank" density="balanced" dividers="rows" hasHover /></Card>
+        <Text type="supporting" color="secondary">총점 = 가입자·게시글·방문·응원위젯 클릭 종합 (/fancafe/daily/ranking/view 대체)</Text>
+      </>}
+      {tab === 'star' && (
+        <Card padding={0}>
+          <List hasDividers density="balanced">
+            {STAR_ARTICLES.map((a) => (
+              <ListItem key={a.id} label={a.title} description={`${a.star} · ${a.at}`}
+                startContent={<Badge variant="purple" label={a.star} />}
+                endContent={featured[a.id]
+                  ? <HStack gap={2}><Badge variant="green" label="대표 노출 중" /><Button label="해제" variant="ghost" size="sm" onClick={() => setFeatured((f) => ({ ...f, [a.id]: false }))} /></HStack>
+                  : <Button label="대표 노출" variant="secondary" size="sm" onClick={() => setFeatured((f) => ({ ...f, [a.id]: true }))} />} />
+            ))}
+          </List>
+        </Card>
+      )}
     </VStack>
   );
 }
@@ -647,10 +702,28 @@ export function Roles() {
         : <Text type="supporting" color="secondary">–</Text>,
     })),
   ];
+  // 계정 위생 — 사용만료 임박·서약서 미확인 자동 통지 (기존: 없음)
+  const HYGIENE: { ldap: string; name: string; issue: string; variant: BadgeVariant; label: string }[] = [
+    { ldap: 'op.contents', name: '김운영', issue: '사용만료 2026-07-18 (12일 남음)', variant: 'yellow', label: '만료임박' },
+    { ldap: 'op.fav', name: '정인기', issue: '보안 서약서 미확인 · 사용만료 07-10', variant: 'red', label: '서약서 미확인' },
+    { ldap: 'pi.guard', name: '최비밀', issue: '사용만료 2026-06-30 (만료됨) — 접근 차단', variant: 'red', label: '만료' },
+  ];
+  const [notified, setNotified] = useState<Record<string, boolean>>({});
   return (
     <VStack gap={5}>
-      <PageHeader title="운영자 · 권한" meta={<Badge variant="yellow" label={`요청 ${reqs.length}`} />}
+      <PageHeader title="운영자 · 권한" meta={<><Badge variant="yellow" label={`요청 ${reqs.length}`} /><Badge variant="red" label={`계정 위생 ${HYGIENE.filter((h) => !notified[h.ldap]).length}`} /></>}
         description="계정 권한 유형: 조회 · 카페 열람 · 규제(금칙어/노출제외) · 제재(계정 정지) — 기간 한정 부여 후 자동 회수" />
+      {HYGIENE.some((h) => !notified[h.ldap]) && (
+        <Card padding={0}>
+          <List hasDividers density="balanced" header={<Heading level={4}>⚠ 계정 위생 알림</Heading>}>
+            {HYGIENE.filter((h) => !notified[h.ldap]).map((h) => (
+              <ListItem key={h.ldap} label={`${h.name} (${h.ldap})`} description={h.issue}
+                startContent={<Badge variant={h.variant} label={h.label} />}
+                endContent={<Button label="갱신 통지" variant="secondary" size="sm" onClick={() => setNotified((n) => ({ ...n, [h.ldap]: true }))} />} />
+            ))}
+          </List>
+        </Card>
+      )}
       <VStack gap={2}>
         <Heading level={4}>역할별 권한 매트릭스</Heading>
         <Card padding={0}><Table<RoleDef> data={ROLE_MATRIX} columns={cols} idKey="role" density="balanced" dividers="rows" /></Card>
