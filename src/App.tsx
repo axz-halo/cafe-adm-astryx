@@ -141,6 +141,19 @@ const flagVariant = (f: Flag): 'red' | 'orange' | 'blue' | 'purple' | 'neutral' 
 type Opts = { cmt: boolean; news: boolean; thumb: boolean; full: boolean };
 const DEFAULT_OPTS: Opts = { cmt: true, news: false, thumb: true, full: false };
 
+// 댓글 수 — 실서비스 실제 댓글수 자리(UV 대비 결정적 파생)
+function commentsOf(a: Art) {
+  const d = 12 + ((a.title.length * 7 + a.r * 13) % 26);
+  return Math.max(3, Math.round(a.uv / d));
+}
+// AI 사전 링크 요약 — 링크 내용을 1문장으로(실서비스 LLM 요약 자리)
+const SUM_TONE = ['공감을 부른', '갑론을박이 오간', '재치있는', '정보성 짙은', '뭉클한', '화제가 된'];
+function summarize(a: Art) {
+  const tone = SUM_TONE[(a.title.length + a.r) % SUM_TONE.length];
+  const t = a.title.replace(/\.(jpg|txt|png)$/i, '');
+  return `${a.cafe}에서 ${tone} 글 “${t}” — 조회 ${a.uv.toLocaleString()}회·댓글 ${commentsOf(a).toLocaleString()}건으로 확산 중입니다.`;
+}
+
 function FlagBadges({ a }: { a: Art }) {
   return <>{a.flags.map((f) => <Badge key={f} variant={flagVariant(f)} label={f === '신고' ? `신고 ${a.reports ?? 1}` : f} />)}</>;
 }
@@ -218,38 +231,59 @@ function Dashboard({ onGo }: { onGo: (v: string) => void }) {
 }
 
 // 상세 본문 — 실제 카드 컨트롤(노출 옵션 + 카테고리 + 노출) 포함
-function DetailBody({ sel, exposed, opts, cats, onExpose, onOpt, onCat, onClose }: {
-  sel: Art; exposed: Record<number, boolean>; opts: Record<number, Opts>; cats: Record<number, string>;
-  onExpose: (a: Art) => void; onOpt: (r: number, k: keyof Opts, v: boolean) => void; onCat: (r: number, c: string | null) => void; onClose: () => void;
+function DetailBody({ sel, exposed, opts, cats, aiCats, onExpose, onOpt, onCat, onAiCat, onClose }: {
+  sel: Art; exposed: Record<number, boolean>; opts: Record<number, Opts>; cats: Record<number, string>; aiCats: string[];
+  onExpose: (a: Art) => void; onOpt: (r: number, k: keyof Opts, v: boolean) => void; onCat: (r: number, c: string | null) => void; onAiCat: (c: string) => void; onClose: () => void;
 }) {
   const o = opts[sel.r] ?? DEFAULT_OPTS;
+  const cmt = commentsOf(sel);
   return (
-    <VStack gap={4}>
+    <VStack gap={5}>
       <HStack gap={2} vAlign="center" justify="between">
         <Heading level={4}>게시글 상세</Heading>
         <IconButton label="닫기" variant="ghost" size="sm" icon={<Icon icon="close" size="sm" />} onClick={onClose} />
       </HStack>
       <Thumbnail src={svgThumb(sel)} alt={sel.title} label={sel.title} style={{ width: '100%', height: 'auto' }} />
-      <VStack gap={1}>
+      <VStack gap={2}>
         <HStack gap={1} wrap="wrap" vAlign="center"><Badge variant="blue" label={`${sel.r}위`} /><FlagBadges a={sel} /></HStack>
         <Text weight="semibold">{sel.title}</Text>
-        <HStack gap={2}><Text type="supporting" color="accent">{sel.cafe}</Text><Text type="supporting" color="secondary">UV {sel.uv.toLocaleString()}</Text></HStack>
+        <HStack gap={3} wrap="wrap">
+          <Text type="supporting" color="accent">{sel.cafe}</Text>
+          <Text type="supporting" color="secondary">👁 UV {sel.uv.toLocaleString()}</Text>
+          <Text type="supporting" color="secondary">💬 댓글 {cmt.toLocaleString()}</Text>
+        </HStack>
       </VStack>
+
+      {/* AI 사전 링크 요약 (1문장) */}
+      <Card padding={4} variant="purple">
+        <VStack gap={2}>
+          <HStack gap={1} vAlign="center"><Icon icon={SparklesIcon} size="sm" /><Text type="label">AI 요약</Text></HStack>
+          <Text type="supporting">{summarize(sel)}</Text>
+        </VStack>
+      </Card>
+
       <Divider />
       <MetadataList columns="single" title="지표">
         <MetadataListItem label="순위">{sel.r}위</MetadataListItem>
         <MetadataListItem label="UV">{sel.uv.toLocaleString()}</MetadataListItem>
+        <MetadataListItem label="댓글">{cmt.toLocaleString()}</MetadataListItem>
         <MetadataListItem label="주 연령대">{sel.age}</MetadataListItem>
         <MetadataListItem label="상태"><Badge variant={exposed[sel.r] ? 'success' : sel.reports ? 'yellow' : 'neutral'} label={STATUS_LABEL[statusOf(sel, exposed)]} /></MetadataListItem>
       </MetadataList>
       <Divider />
-      <VStack gap={2}>
+      <VStack gap={3}>
         <Text type="label">노출 옵션</Text>
-        <HStack gap={4} wrap="wrap">
+        <Grid columns={2} gap={2}>
           <CheckboxInput label="댓글" value={o.cmt} onChange={(v) => onOpt(sel.r, 'cmt', v)} />
           <CheckboxInput label="뉴스펌" value={o.news} onChange={(v) => onOpt(sel.r, 'news', v)} />
           <CheckboxInput label="썸네일" value={o.thumb} onChange={(v) => onOpt(sel.r, 'thumb', v)} />
           <CheckboxInput label="풀 제외" value={o.full} onChange={(v) => onOpt(sel.r, 'full', v)} />
+        </Grid>
+      </VStack>
+      <VStack gap={2}>
+        <HStack gap={1} vAlign="center"><Icon icon={SparklesIcon} size="sm" /><Text type="label">AI 2차 카테고리 추천</Text></HStack>
+        <HStack gap={2} wrap="wrap">
+          {aiCats.map((c) => <Button key={c} label={c} variant={cats[sel.r] === c ? 'primary' : 'secondary'} size="sm" onClick={() => onAiCat(c)} />)}
         </HStack>
         <Selector label="카테고리" isLabelHidden size="sm" placeholder="카테고리 미선택" hasClear
           options={CATEGORIES} value={cats[sel.r] ?? undefined} onChange={(v) => onCat(sel.r, v)} />
@@ -337,6 +371,7 @@ function Popular() {
     ) },
     { key: 'age', header: '주 연령', width: pixel(68), align: 'end', renderCell: (a) => <Badge variant="neutral" label={a.age} /> },
     { key: 'uv', header: 'UV', width: pixel(76), align: 'end', renderCell: (a) => <Text type="supporting">{a.uv.toLocaleString()}</Text> },
+    { key: 'cmt', header: '댓글', width: pixel(64), align: 'end', renderCell: (a) => <Text type="supporting">{commentsOf(a).toLocaleString()}</Text> },
     { key: 'cat', header: '카테고리', width: pixel(150), renderCell: (a) => (
       <Selector label="카테고리" isLabelHidden size="sm" placeholder="미선택" hasClear
         options={CATEGORIES} value={cats[a.r] ?? undefined} onChange={(v) => setCat(a.r, v)} />
@@ -349,25 +384,35 @@ function Popular() {
   // 카드형 — 실제 어드민 카드(썸네일 + 배지 + 노출 옵션 + 카테고리 + 노출 버튼)
   const renderCard = (a: Art) => {
     const o = opts[a.r] ?? DEFAULT_OPTS;
+    const cmt = commentsOf(a);
     return (
-      <Card key={a.r} padding={4}>
-        <VStack gap={3} height="100%">
+      <Card key={a.r} padding={5}>
+        <VStack gap={4} height="100%">
           <Thumbnail src={svgThumb(a)} alt={a.title} label={a.title} onClick={() => setSel(a)} style={{ width: '100%', height: 'auto' }} />
           <HStack gap={1} wrap="wrap" vAlign="center"><Badge variant="blue" label={`${a.r}위`} /><FlagBadges a={a} /></HStack>
           <StackItem size="fill">
             <VStack gap={1}>
               <Text weight="medium" maxLines={2}>{a.title}</Text>
-              <HStack gap={2}><Text type="supporting" color="accent">{a.cafe}</Text><Text type="supporting" color="secondary">UV {a.uv.toLocaleString()}</Text></HStack>
+              <HStack gap={2} wrap="wrap">
+                <Text type="supporting" color="accent">{a.cafe}</Text>
+                <Text type="supporting" color="secondary">👁 {a.uv.toLocaleString()}</Text>
+                <Text type="supporting" color="secondary">💬 {cmt.toLocaleString()}</Text>
+              </HStack>
             </VStack>
           </StackItem>
-          <HStack gap={3} wrap="wrap">
+          <Grid columns={2} gap={2}>
             <CheckboxInput label="댓글" value={o.cmt} onChange={(v) => setOpt(a.r, 'cmt', v)} />
             <CheckboxInput label="뉴스펌" value={o.news} onChange={(v) => setOpt(a.r, 'news', v)} />
             <CheckboxInput label="썸네일" value={o.thumb} onChange={(v) => setOpt(a.r, 'thumb', v)} />
             <CheckboxInput label="풀 제외" value={o.full} onChange={(v) => setOpt(a.r, 'full', v)} />
+          </Grid>
+          <HStack gap={2} vAlign="end">
+            <StackItem size="fill">
+              <Selector label="카테고리" isLabelHidden size="sm" placeholder="카테고리 미선택" hasClear
+                options={CATEGORIES} value={cats[a.r] ?? undefined} onChange={(v) => setCat(a.r, v)} />
+            </StackItem>
+            <Button label="AI 분류" variant="secondary" size="sm" icon={<Icon icon={SparklesIcon} size="sm" />} onClick={() => setCat(a.r, suggest(a)[0])} />
           </HStack>
-          <Selector label="카테고리" isLabelHidden size="sm" placeholder="카테고리 미선택" hasClear
-            options={CATEGORIES} value={cats[a.r] ?? undefined} onChange={(v) => setCat(a.r, v)} />
           <Button label={exposed[a.r] ? '노출완료' : '노출하기'} variant={exposed[a.r] ? 'secondary' : 'primary'} onClick={() => toggleExpose(a)} />
         </VStack>
       </Card>
@@ -375,7 +420,7 @@ function Popular() {
   };
   const groupContent = (r: Art[]) => viewMode === 'list'
     ? <Card padding={0}><Table<Art> data={r} columns={columns} idKey="r" density="balanced" dividers="rows" hasHover /></Card>
-    : <Grid columns={{ minWidth: 240 }} gap={3}>{r.map(renderCard)}</Grid>;
+    : <Grid columns={{ minWidth: 280 }} gap={4}>{r.map(renderCard)}</Grid>;
 
   const groupLabel = (k: string) => groupBy === 'status' ? STATUS_LABEL[k] : k;
   const rows = [...groups.entries()].filter(([, r]) => r.length > 0);
@@ -387,6 +432,12 @@ function Popular() {
     const picks = [a.cat ?? cats[a.r] ?? CATEGORIES[h % CATEGORIES.length], CATEGORIES[(h + 3) % CATEGORIES.length], CATEGORIES[(h + 7) % CATEGORIES.length]];
     return [...new Set(picks)].slice(0, 3);
   };
+  // AI 2차 카테고리 일괄 매핑 — 미분류 후보에 AI 추천 1순위 자동 지정
+  const aiClassifyAll = () => setCats((m) => {
+    const n = { ...m };
+    filtered.forEach((a) => { if (!n[a.r]) n[a.r] = suggest(a)[0]; });
+    return n;
+  });
   const triageItems = filtered.filter((a) => !exposed[a.r]).map((a) => ({
     r: a.r, title: a.title, cafe: a.cafe, uv: a.uv, flags: a.flags as string[],
     thumb: svgThumb(a), cat: cats[a.r], catSuggest: suggest(a),
@@ -408,6 +459,7 @@ function Popular() {
               description="2026-07-02 08시 30분 ~ 09시 30분까지 수집된 인기 게시글 후보"
               actions={<>
                 <Button label="새로고침" variant="secondary" size="md" icon={<Icon icon={ArrowPathIcon} size="sm" />} />
+                <Button label="AI 일괄 분류" variant="secondary" size="md" icon={<Icon icon={SparklesIcon} size="sm" />} onClick={aiClassifyAll} />
                 <Button label="노출완료 보기" variant="secondary" size="md" icon={<Icon icon="check" size="sm" />} />
                 <Button label="Tromm 배포" variant="primary" size="md" icon={<Icon icon={RocketLaunchIcon} size="sm" />} />
               </>}
@@ -459,7 +511,7 @@ function Popular() {
                     {groupContent(r)}
                   </Collapsible>
             ))}
-            {viewMode !== 'triage' && isNarrow && sel && (<><Divider /><DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onClose={() => setSel(null)} /></>)}
+            {viewMode !== 'triage' && isNarrow && sel && (<><Divider /><DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} aiCats={suggest(sel)} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onAiCat={(c) => setCat(sel.r, c)} onClose={() => setSel(null)} /></>)}
           </VStack>
         </LayoutContent>
       }
@@ -467,7 +519,7 @@ function Popular() {
         <>
           <ResizeHandle resizable={panel.props} isReversed isAlwaysVisible={false} />
           <LayoutPanel hasDivider label="게시글 상세" resizable={panel.props as never}>
-            <DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onClose={() => setSel(null)} />
+            <DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} aiCats={suggest(sel)} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onAiCat={(c) => setCat(sel.r, c)} onClose={() => setSel(null)} />
           </LayoutPanel>
         </>
       )}
