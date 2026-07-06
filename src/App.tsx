@@ -45,16 +45,11 @@ import LoginSSO from './app/login-sso/page';
 import { fetchDailyArticles } from './api';
 import { SmartThumb } from './SmartThumb';
 
-// 다음카페 브랜드 마크 — 빨간 원형 + cafe 워드마크
+// 다음카페 브랜드 마크 — 공식 앱 아이콘(favicon 에셋 재사용, base 경로 안전)
 function CafeMark({ size = 28 }: { size?: number }) {
   return (
-    <span style={{ display: 'inline-flex', width: size, height: size }} aria-label="Daum Cafe">
-      <svg width={size} height={size} viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="20" cy="20" r="20" fill="#FE1E1E" />
-        <text x="20" y="21" textAnchor="middle" dominantBaseline="central"
-          fontFamily="Pretendard, -apple-system, 'Apple SD Gothic Neo', sans-serif" fontWeight={800} fontSize={13} fill="#fff">cafe</text>
-      </svg>
-    </span>
+    <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="Daum Cafe" width={size} height={size}
+      style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), display: 'block' }} />
   );
 }
 
