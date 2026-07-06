@@ -18,4 +18,12 @@ export default defineConfig({
   optimizeDeps: {
     include: [...ASTRYX, '@heroicons/react/24/outline', '@heroicons/react/24/solid', 'lucide-react', 'react', 'react-dom', 'react-dom/client'],
   },
+  // 실데이터 연동: /api → proxy_server.py(5871) → cbt2-cafe-popular-api.dev (사내망)
+  // 배포본(GitHub Pages)에는 /api가 없어 각 뷰가 목데이터로 폴백한다.
+  server: {
+    proxy: {
+      '/api': { target: 'http://localhost:5871', changeOrigin: true },
+      '/img': { target: 'http://localhost:5871', changeOrigin: true }, // 카페 첨부 이미지 중계(핫링크 우회)
+    },
+  },
 })

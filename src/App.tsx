@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@astryxdesign/core/AppShell';
 import { NavIcon } from '@astryxdesign/core/NavIcon';
 import { SideNav, SideNavHeading, SideNavSection, SideNavItem } from '@astryxdesign/core/SideNav';
@@ -44,13 +44,23 @@ import { Console360 } from './views/Console360';
 import { PageHeader } from './views/PageHeader';
 import { Triage } from './views/Triage';
 import LoginSSO from './app/login-sso/page';
+import { fetchDailyArticles } from './api';
 
 // ── 메뉴 트리 ──
+// 실데이터 API 연동 대상 4개만 노출. 나머지 메뉴는 연동 전까지 hidden 처리(HIDDEN_NAV 보존).
 const NAV = [
   { section: '콘텐츠 운영', items: [
-    { key: 'dashboard', label: '대시보드', icon: HomeIcon }, { key: 'popular', label: '노출 인기글 관리', icon: FireIcon },
+    { key: 'popular', label: '노출 인기글 관리', icon: FireIcon },
     { key: 'category', label: '카테고리 인기글', icon: RectangleStackIcon },
-    { key: 'trend', label: '카페 트렌드', icon: ArrowTrendingUpIcon }, { key: 'retro', label: '주간 · 월간 인기글', icon: CalendarDaysIcon }, { key: 'reco', label: '추천 컨텐츠 관리', icon: SparklesIcon },
+    { key: 'trend', label: '카페 트렌드', icon: ArrowTrendingUpIcon },
+    { key: 'retro', label: '주간 · 월간 인기글', icon: CalendarDaysIcon },
+  ]},
+] as const;
+
+// 연동 전 숨김 — 이전 구현은 유지(App 라우팅에도 남아 있어 직접 접근 가능)
+const HIDDEN_NAV = [
+  { section: '콘텐츠 운영', items: [
+    { key: 'dashboard', label: '대시보드', icon: HomeIcon }, { key: 'reco', label: '추천 컨텐츠 관리', icon: SparklesIcon },
   ]},
   { section: '검수 · 정책', items: [
     { key: 'queue', label: '검수 큐', count: '23', icon: ClipboardDocumentCheckIcon }, { key: 'words', label: '금칙어 · 규제 키워드', icon: NoSymbolIcon },
@@ -64,6 +74,7 @@ const NAV = [
   { section: '정산 · 분석', items: [{ key: 'profit', label: '수익 · 정산', icon: BanknotesIcon }, { key: 'stat', label: '통계', icon: ChartBarIcon }]},
   { section: '시스템', items: [{ key: 'roles', label: '권한요청', icon: KeyIcon }, { key: 'deploy', label: '배포일지', icon: ClipboardDocumentListIcon }]},
 ] as const;
+void HIDDEN_NAV;
 const LABELS: Record<string, string> = Object.fromEntries(NAV.flatMap((s) => s.items.map((i) => [i.key, i.label])));
 
 // ── 실제 어드민(노출 인기글 관리) 데이터 구조 ──
@@ -72,6 +83,7 @@ type Flag = '수정' | '신고' | 'OLD' | 'NEW' | '단어';
 type Art = {
   r: number; title: string; cafe: string; cat?: string; emoji: string; bg: Bg;
   uv: number; age: string; flags: Flag[]; reports?: number;
+  img?: string; cmt?: number; link?: string; real?: boolean; // 실데이터 연동 필드
 };
 // 2026-07-02 10시 실서버 수집분 기준 샘플 (실제 화면 데이터 반영)
 const ARTICLES: Art[] = [
@@ -116,11 +128,9 @@ const ARTICLES_ALL: Art[] = [...ARTICLES, ...EXTRA];
 const INITIAL_EXPOSED: Record<number, boolean> = { 3: true, 7: true, 12: true, 13: true, 18: true };
 // 실제 어드민 카테고리 셀렉터 옵션
 const CATEGORIES = ['음식', '맛집', '유머', '동물', '주식', '축구', '힐링공감', '사회', '금융', '연예일반', '연예', '가족'];
-const CAFES = [...new Set(ARTICLES.map((a) => a.cafe))];
 // 실제 어드민의 카페 칩 목록 (0건 카페 포함 노출)
 const CHIP_CAFES = ['여성시대', '도탁스', '이종격투기', '텐인텐', '다음맘카페', '樂soccer', '쭉빵 카페', '임영웅 공'];
 // 노출 시간대 필터 (실제: 날짜/시각/개수)
-const HOURS = ['08시', '09시', '10시', '11시'];
 const LIMITS = ['100개', '300개', '500개'];
 
 // 프리뷰 이미지 — 실서비스 썸네일 자리(레퍼런스 파스텔 팔레트 SVG 에셋)
@@ -141,11 +151,14 @@ const flagVariant = (f: Flag): 'red' | 'orange' | 'blue' | 'purple' | 'neutral' 
 type Opts = { cmt: boolean; news: boolean; thumb: boolean; full: boolean };
 const DEFAULT_OPTS: Opts = { cmt: true, news: false, thumb: true, full: false };
 
-// 댓글 수 — 실서비스 실제 댓글수 자리(UV 대비 결정적 파생)
+// 댓글 수 — 실데이터(cmt) 우선, 없으면 UV 대비 결정적 파생
 function commentsOf(a: Art) {
+  if (a.cmt != null) return a.cmt;
   const d = 12 + ((a.title.length * 7 + a.r * 13) % 26);
   return Math.max(3, Math.round(a.uv / d));
 }
+// 썸네일 — 실데이터 og:image 우선, 없으면 파스텔 SVG
+const thumbSrc = (a: Art) => a.img || svgThumb(a);
 // AI 사전 링크 요약 — 링크 내용을 1문장으로(실서비스 LLM 요약 자리)
 const SUM_TONE = ['공감을 부른', '갑론을박이 오간', '재치있는', '정보성 짙은', '뭉클한', '화제가 된'];
 function summarize(a: Art) {
@@ -165,7 +178,7 @@ const ACTIVITY: [string, string, string][] = [
 ];
 
 function Thumb({ a }: { a: Art }) {
-  return <Thumbnail src={svgThumb(a)} alt={a.title} label={a.title} style={{ width: 48, height: 48 }} />;
+  return <Thumbnail src={thumbSrc(a)} alt={a.title} label={a.title} style={{ width: 48, height: 48 }} />;
 }
 
 // 대시보드 — 액션 큐형 재구성: ① 오늘 해야 할 일(클릭=이동) ② 이상 신호(예외만) ③ 어제의 성과 ④ 활동 로그(축소)
@@ -243,7 +256,7 @@ function DetailBody({ sel, exposed, opts, cats, aiCats, onExpose, onOpt, onCat, 
         <Heading level={4}>게시글 상세</Heading>
         <IconButton label="닫기" variant="ghost" size="sm" icon={<Icon icon="close" size="sm" />} onClick={onClose} />
       </HStack>
-      <Thumbnail src={svgThumb(sel)} alt={sel.title} label={sel.title} style={{ width: '100%', height: 'auto' }} />
+      <Thumbnail src={thumbSrc(sel)} alt={sel.title} label={sel.title} style={{ width: '100%', height: 'auto' }} />
       <VStack gap={2}>
         <HStack gap={1} wrap="wrap" vAlign="center"><Badge variant="blue" label={`${sel.r}위`} /><FlagBadges a={sel} /></HStack>
         <Text weight="semibold">{sel.title}</Text>
@@ -303,26 +316,56 @@ function Popular() {
   const [excluded, setExcluded] = useState<Record<number, boolean>>({});
   const [moved, setMoved] = useState<Record<number, boolean>>({});
   const [cafeChip, setCafeChip] = useState<string | null>(null);
-  const [hour, setHour] = useState('10시');
   const [limit, setLimit] = useState('500개');
   const [sel, setSel] = useState<Art | null>(ARTICLES[0]);
   const [exposed, setExposed] = useState<Record<number, boolean>>(INITIAL_EXPOSED);
   const [opts, setOpts] = useState<Record<number, Opts>>({});
   const [cats, setCats] = useState<Record<number, string>>(Object.fromEntries(ARTICLES.filter((a) => a.cat).map((a) => [a.r, a.cat!])));
   const isNarrow = useMediaQuery('(max-width: 1200px)');
+  // ── 실데이터 연동 (cafe-popular-api /popular/article/daily) ──
+  const [sex, setSex] = useState('all'); // all | M | F
+  const [age, setAge] = useState('all'); // all | 10 | 20 | 30 | 40 | 50
+  const [live, setLive] = useState<Art[] | null>(null);
+  const [dataMode, setDataMode] = useState<'live' | 'mock' | 'loading'>('loading');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    setDataMode('loading');
+    const size = Math.min(parseInt(limit, 10) || 100, 100);
+    fetchDailyArticles({ sex, age, size })
+      .then((arts) => {
+        if (!alive) return;
+        const mapped: Art[] = arts.map((a) => ({
+          r: a.rnum, title: a.title, cafe: a.cafe, emoji: '', bg: 'gray',
+          uv: a.viewcnt, cmt: a.cmtcnt, age: '', flags: [], img: a.img, link: a.link, real: true,
+        }));
+        setLive(mapped);
+        setDataMode('live');
+        setSel(mapped[0] ?? null);
+        // 목데이터 시드가 순위 충돌로 새는 것 방지 — 실데이터는 운영 상태 초기화
+        setExposed({}); setCats({}); setExcluded({}); setMoved({}); setOpts({});
+      })
+      .catch(() => { if (alive) { setLive(null); setDataMode('mock'); } });
+    return () => { alive = false; };
+  }, [sex, age, limit, reloadKey]);
+
+  const sourceAll = live ?? ARTICLES_ALL;
+  const allCafes = useMemo(() => [...new Set(sourceAll.map((a) => a.cafe))], [sourceAll]);
+  const chips = dataMode === 'live' ? allCafes.slice(0, 8) : CHIP_CAFES;
   const panel = useResizable({ defaultSize: 320, minSizePx: 280, maxSizePx: 460 });
 
   const toggleExpose = (a: Art) => setExposed((e) => ({ ...e, [a.r]: !e[a.r] }));
   const setOpt = (r: number, k: keyof Opts, v: boolean) => setOpts((m) => ({ ...m, [r]: { ...(m[r] ?? DEFAULT_OPTS), [k]: v } }));
   const setCat = (r: number, c: string | null) => setCats((m) => { const n = { ...m }; if (c) n[r] = c; else delete n[r]; return n; });
 
-  const exposedCount = ARTICLES_ALL.filter((a) => exposed[a.r]).length;
-  const excludedCount = ARTICLES_ALL.filter((a) => excluded[a.r]).length;
-  const movedCount = ARTICLES_ALL.filter((a) => moved[a.r]).length;
+  const exposedCount = sourceAll.filter((a) => exposed[a.r]).length;
+  const excludedCount = sourceAll.filter((a) => excluded[a.r]).length;
+  const movedCount = sourceAll.filter((a) => moved[a.r]).length;
 
   const filtered = useMemo(() => {
     try {
-      return ARTICLES_ALL.filter((a) => !excluded[a.r] && !moved[a.r]).filter((a) => (!cafeChip || a.cafe === cafeChip)).filter((a) =>
+      return sourceAll.filter((a) => !excluded[a.r] && !moved[a.r]).filter((a) => (!cafeChip || a.cafe === cafeChip)).filter((a) =>
         filters.every((f) => {
           const key = (f as never as { field: string }).field;
           const raw = (f as never as { value: unknown }).value;
@@ -334,23 +377,23 @@ function Popular() {
           return true;
         }),
       ).sort((x, y) => x.r - y.r);
-    } catch { return ARTICLES_ALL; }
-  }, [filters, exposed, excluded, moved, cafeChip, cats]);
+    } catch { return sourceAll; }
+  }, [filters, exposed, excluded, moved, cafeChip, cats, sourceAll]);
 
   const groups = useMemo(() => {
     const m = new Map<string, Art[]>();
     if (groupBy === 'none') { m.set('전체', filtered); return m; }
-    const order = groupBy === 'status' ? ['wait', 'issue', 'done'] : CAFES;
+    const order = groupBy === 'status' ? ['wait', 'issue', 'done'] : allCafes;
     order.forEach((k) => m.set(k, []));
     filtered.forEach((a) => { const k = groupBy === 'status' ? statusOf(a, exposed) : a.cafe; (m.get(k) ?? m.set(k, []).get(k)!).push(a); });
     return m;
-  }, [filtered, groupBy, exposed]);
+  }, [filtered, groupBy, exposed, allCafes]);
 
   const config: PowerSearchConfig = {
     name: 'PopularSearch',
     fields: [
       { key: 'status', label: '상태', operators: [{ key: 'is', label: 'is', value: { type: 'enum', values: [{ value: 'wait', label: '노출 대기' }, { value: 'issue', label: '신고 감지' }, { value: 'done', label: '노출 완료' }] } }] },
-      { key: 'cafe', label: '카페', operators: [{ key: 'is', label: 'is', value: { type: 'enum', values: CAFES.map((c) => ({ value: c, label: c })) } }] },
+      { key: 'cafe', label: '카페', operators: [{ key: 'is', label: 'is', value: { type: 'enum', values: allCafes.map((c) => ({ value: c, label: c })) } }] },
       { key: 'cat', label: '카테고리', operators: [{ key: 'is', label: 'is', value: { type: 'enum', values: CATEGORIES.map((c) => ({ value: c, label: c })) } }] },
     ],
   };
@@ -388,7 +431,7 @@ function Popular() {
     return (
       <Card key={a.r} padding={5}>
         <VStack gap={4} height="100%">
-          <Thumbnail src={svgThumb(a)} alt={a.title} label={a.title} onClick={() => setSel(a)} style={{ width: '100%', height: 'auto' }} />
+          <Thumbnail src={thumbSrc(a)} alt={a.title} label={a.title} onClick={() => setSel(a)} style={{ width: '100%', height: 'auto' }} />
           <HStack gap={1} wrap="wrap" vAlign="center"><Badge variant="blue" label={`${a.r}위`} /><FlagBadges a={a} /></HStack>
           <StackItem size="fill">
             <VStack gap={1}>
@@ -424,7 +467,7 @@ function Popular() {
 
   const groupLabel = (k: string) => groupBy === 'status' ? STATUS_LABEL[k] : k;
   const rows = [...groups.entries()].filter(([, r]) => r.length > 0);
-  const chipCount = (c: string) => ARTICLES_ALL.filter((a) => a.cafe === c).length;
+  const chipCount = (c: string) => sourceAll.filter((a) => a.cafe === c).length;
 
   // 검수 모드 — AI 추천 카테고리(확정된 값 우선 + 결정적 추천 2개) + 큐 매핑
   const suggest = (a: Art): string[] => {
@@ -440,7 +483,7 @@ function Popular() {
   });
   const triageItems = filtered.filter((a) => !exposed[a.r]).map((a) => ({
     r: a.r, title: a.title, cafe: a.cafe, uv: a.uv, flags: a.flags as string[],
-    thumb: svgThumb(a), cat: cats[a.r], catSuggest: suggest(a),
+    thumb: thumbSrc(a), cat: cats[a.r], catSuggest: suggest(a),
   }));
 
   return (
@@ -450,22 +493,34 @@ function Popular() {
         <LayoutHeader hasDivider padding={5}>
           <VStack gap={4}>
             <PageHeader
-              title="2026-07-02 10시의 인기글"
+              title="실시간 인기글"
               meta={<>
-                <HStack gap={1} vAlign="center"><StatusDot variant="success" isPulsing label="노출 중" tooltip="실제 노출 시간대" /><Text type="supporting" color="secondary">노출 중</Text></HStack>
-                <Badge variant="red" label={`노출개수 ${exposedCount + 43}`} />
-                <Badge variant="blue" label={`이동완료글 ${movedCount}개`} />
+                {dataMode === 'live'
+                  ? <HStack gap={1} vAlign="center"><StatusDot variant="success" isPulsing label="실데이터" tooltip="cafe-popular-api 실시간" /><Badge variant="green" label="실데이터 연동" /></HStack>
+                  : dataMode === 'loading'
+                    ? <Badge variant="neutral" label="불러오는 중…" />
+                    : <HStack gap={1} vAlign="center"><StatusDot variant="warning" label="샘플" /><Badge variant="yellow" label="샘플(폴백)" /></HStack>}
+                <Badge variant="blue" label={`후보 ${sourceAll.length}건`} />
+                <Badge variant="neutral" label={`노출 ${exposedCount}`} />
               </>}
-              description="2026-07-02 08시 30분 ~ 09시 30분까지 수집된 인기 게시글 후보"
+              description={dataMode === 'live'
+                ? '/popular/article/daily — 조회수·댓글수·순위·썸네일 실시간 반영 (사내망)'
+                : dataMode === 'loading' ? '실데이터를 불러오는 중입니다…'
+                : '사내망/프록시 미연결 — 샘플 데이터로 표시 중입니다.'}
               actions={<>
-                <Button label="새로고침" variant="secondary" size="md" icon={<Icon icon={ArrowPathIcon} size="sm" />} />
+                <Button label="새로고침" variant="secondary" size="md" icon={<Icon icon={ArrowPathIcon} size="sm" />} onClick={() => setReloadKey((k) => k + 1)} />
                 <Button label="AI 일괄 분류" variant="secondary" size="md" icon={<Icon icon={SparklesIcon} size="sm" />} onClick={aiClassifyAll} />
                 <Button label="노출완료 보기" variant="secondary" size="md" icon={<Icon icon="check" size="sm" />} />
                 <Button label="Tromm 배포" variant="primary" size="md" icon={<Icon icon={RocketLaunchIcon} size="sm" />} />
               </>}
             />
             <HStack gap={2} vAlign="center" wrap="wrap">
-              <Selector label="수집 시각" isLabelHidden size="md" options={HOURS} value={hour} onChange={(v) => v && setHour(v)} />
+              <Selector label="성별" isLabelHidden size="md" placeholder="성별"
+                options={[{ value: 'all', label: '성별 전체' }, { value: 'M', label: '남성' }, { value: 'F', label: '여성' }]}
+                value={sex} onChange={(v) => v && setSex(v)} />
+              <Selector label="연령" isLabelHidden size="md" placeholder="연령"
+                options={[{ value: 'all', label: '연령 전체' }, ...['10', '20', '30', '40', '50'].map((a) => ({ value: a, label: `${a}대` }))]}
+                value={age} onChange={(v) => v && setAge(v)} />
               <Selector label="수집 개수" isLabelHidden size="md" options={LIMITS} value={limit} onChange={(v) => v && setLimit(v)} />
               <StackItem size="fill">
                 <PowerSearch config={config} filters={filters} onChange={(f) => setFilters(f)} placeholder="상태 · 카페 · 카테고리 · 글 제목으로 필터…" resultCount={`${filtered.length}건`} />
@@ -482,8 +537,8 @@ function Popular() {
               </SegmentedControl>
             </HStack>
             <HStack gap={2} vAlign="center" wrap="wrap">
-              <ToggleButton size="sm" label={`전체카페 ${ARTICLES_ALL.length}`} isPressed={cafeChip === null} onPressedChange={() => setCafeChip(null)} />
-              {CHIP_CAFES.map((c) => (
+              <ToggleButton size="sm" label={`전체카페 ${sourceAll.length}`} isPressed={cafeChip === null} onPressedChange={() => setCafeChip(null)} />
+              {chips.map((c) => (
                 <ToggleButton key={c} size="sm" label={`${c} ${chipCount(c)}`} isPressed={cafeChip === c} onPressedChange={(p) => setCafeChip(p ? c : null)} />
               ))}
             </HStack>
@@ -495,7 +550,7 @@ function Popular() {
           <VStack gap={4}>
             {viewMode === 'triage' && (
               <Triage items={triageItems} categories={CATEGORIES}
-                processed={exposedCount + excludedCount + movedCount} total={ARTICLES_ALL.length}
+                processed={exposedCount + excludedCount + movedCount} total={sourceAll.length}
                 counts={{ exposed: exposedCount, moved: movedCount, excluded: excludedCount }}
                 onExpose={(r) => setExposed((e) => ({ ...e, [r]: true }))}
                 onMove={(r) => setMoved((m) => ({ ...m, [r]: true }))}
@@ -563,7 +618,7 @@ export default function App() {
             <SideNavSection key={s.section} title={s.section}>
               {s.items.map((it) => (
                 <SideNavItem key={it.key} label={it.label} icon={it.icon} isSelected={view === it.key} onClick={() => setView(it.key)}
-                  endContent={'count' in it && it.count ? <Badge variant="neutral" label={it.count} /> : undefined} />
+                  endContent={(it as { count?: string }).count ? <Badge variant="neutral" label={(it as { count?: string }).count!} /> : undefined} />
               ))}
             </SideNavSection>
           ))}
