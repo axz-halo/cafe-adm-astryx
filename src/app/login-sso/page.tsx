@@ -6,9 +6,9 @@ import { Button } from '@astryxdesign/core/Button';
 import { Link } from '@astryxdesign/core/Link';
 import './login.css';
 
-// ── cafe ADM 로그인 — 사번 계정 로그인 (레거시 cafe-adm 방식) ──
-// SSO 제거. 사원번호 + 비밀번호로 로그인.
-// ⚠️ 실제 검증은 사내 인증 API가 있어야 함. authenticate()가 연동 지점.
+// ── cafe ADM 로그인 — LDAP ID(사내 계정) 로그인 (레거시 cafe-adm 방식) ──
+// SSO 제거. 로그인 식별자는 LDAP accountId (예: halo.wave) — 사번(employeeNo)이 아님.
+// 레거시 인증: HelloMIS POST /rest/identity/members/auth (id, pw). accountId=로그인ID, employeeNo(사번)는 인증 후 속성.
 
 const TAGLINES = [
   '실시간 인기글을 한 곳에서',
@@ -16,20 +16,20 @@ const TAGLINES = [
   'AI 초안, 사람의 최종 판단',
 ];
 
-// 사내 인증 연동 지점 — 엔드포인트가 준비되면 이 함수만 교체.
-// 예: const r = await fetch('/auth/login', {method:'POST', body: JSON.stringify({empno, password})}); return r.ok;
-async function authenticate(empno: string, password: string): Promise<boolean> {
-  return empno.trim().length > 0 && password.length > 0;
+// 사내 인증 연동 지점 — 실제로는 helloMIS(/rest/identity/members/auth)에 id·pw 검증.
+// 엔드포인트가 붙으면 이 함수만 교체.
+async function authenticate(ldapId: string, password: string): Promise<boolean> {
+  return ldapId.trim().length > 0 && password.length > 0;
 }
 
 export default function LoginSSO({ onLogin }: { onLogin: (id: string) => void }) {
-  const [empno, setEmpno] = useState('');
+  const [ldapId, setLdapId] = useState('');
   const [password, setPassword] = useState('');
   const [failed, setFailed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [tagIdx, setTagIdx] = useState(0);
 
-  const canSubmit = empno.trim().length > 0 && password.length > 0;
+  const canSubmit = ldapId.trim().length > 0 && password.length > 0;
   const faviconUrl = `${import.meta.env.BASE_URL}favicon.svg`;
 
   useEffect(() => {
@@ -41,8 +41,8 @@ export default function LoginSSO({ onLogin }: { onLogin: (id: string) => void })
     if (!canSubmit) { setFailed(true); return; }
     setIsLoading(true);
     setFailed(false);
-    const ok = await authenticate(empno, password);
-    if (ok) { onLogin(empno.trim()); }
+    const ok = await authenticate(ldapId, password);
+    if (ok) { onLogin(ldapId.trim()); }
     else { setFailed(true); setIsLoading(false); }
   };
 
@@ -78,18 +78,18 @@ export default function LoginSSO({ onLogin }: { onLogin: (id: string) => void })
             <VStack gap={4} hAlign="stretch">
               <VStack gap={1}>
                 <Text type="display-3" as="h2">로그인</Text>
-                <Text type="body" color="secondary" size="sm">사원번호로 통합 운영 어드민에 접속하세요</Text>
+                <Text type="body" color="secondary" size="sm">사내 계정(LDAP)으로 통합 운영 어드민에 접속하세요</Text>
               </VStack>
 
               <div onKeyDown={(e) => { if (e.key === 'Enter') handleSignIn(); }}>
                 <VStack gap={3}>
-                  <TextInput label="사원번호" type="text" placeholder="사원번호"
-                    value={empno} size="lg"
-                    onChange={(v: string) => { setEmpno(v); setFailed(false); }} />
+                  <TextInput label="LDAP ID" type="text" placeholder="사내 계정 (예: halo.wave)"
+                    value={ldapId} size="lg"
+                    onChange={(v: string) => { setLdapId(v); setFailed(false); }} />
                   <TextInput label="비밀번호" type="password" placeholder="비밀번호"
                     value={password} size="lg"
                     onChange={(v: string) => { setPassword(v); setFailed(false); }}
-                    status={failed ? { type: 'error', message: '사원번호와 비밀번호를 확인하세요.' } : undefined} />
+                    status={failed ? { type: 'error', message: 'LDAP ID와 비밀번호를 확인하세요.' } : undefined} />
                 </VStack>
               </div>
 
