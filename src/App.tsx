@@ -26,7 +26,6 @@ import { Table, proportional, pixel } from '@astryxdesign/core/Table';
 import type { TableColumn } from '@astryxdesign/core/Table';
 import { useResizable, ResizeHandle } from '@astryxdesign/core/Resizable';
 import { useMediaQuery } from '@astryxdesign/core/hooks';
-import { Thumbnail } from '@astryxdesign/core/Thumbnail';
 import {
   ArrowPathIcon, RocketLaunchIcon, Squares2X2Icon, QueueListIcon,
   FireIcon, RectangleStackIcon, ArrowTrendingUpIcon, CalendarDaysIcon, SparklesIcon,
@@ -45,6 +44,7 @@ import { PageHeader } from './views/PageHeader';
 import { Triage } from './views/Triage';
 import LoginSSO from './app/login-sso/page';
 import { fetchDailyArticles } from './api';
+import { SmartThumb } from './SmartThumb';
 
 // ── 메뉴 트리 ──
 // 실데이터 API 연동 대상 4개만 노출. 나머지 메뉴는 연동 전까지 hidden 처리(HIDDEN_NAV 보존).
@@ -158,7 +158,6 @@ function commentsOf(a: Art) {
   return Math.max(3, Math.round(a.uv / d));
 }
 // 썸네일 — 실데이터 og:image 우선, 없으면 파스텔 SVG
-const thumbSrc = (a: Art) => a.img || svgThumb(a);
 // AI 사전 링크 요약 — 링크 내용을 1문장으로(실서비스 LLM 요약 자리)
 const SUM_TONE = ['공감을 부른', '갑론을박이 오간', '재치있는', '정보성 짙은', '뭉클한', '화제가 된'];
 function summarize(a: Art) {
@@ -178,7 +177,7 @@ const ACTIVITY: [string, string, string][] = [
 ];
 
 function Thumb({ a }: { a: Art }) {
-  return <Thumbnail src={thumbSrc(a)} alt={a.title} label={a.title} style={{ width: 48, height: 48 }} />;
+  return <SmartThumb src={a.img} fallback={svgThumb(a)} alt={a.title} label={a.title} style={{ width: 48, height: 48 }} />;
 }
 
 // 대시보드 — 액션 큐형 재구성: ① 오늘 해야 할 일(클릭=이동) ② 이상 신호(예외만) ③ 어제의 성과 ④ 활동 로그(축소)
@@ -256,7 +255,7 @@ function DetailBody({ sel, exposed, opts, cats, aiCats, onExpose, onOpt, onCat, 
         <Heading level={4}>게시글 상세</Heading>
         <IconButton label="닫기" variant="ghost" size="sm" icon={<Icon icon="close" size="sm" />} onClick={onClose} />
       </HStack>
-      <Thumbnail src={thumbSrc(sel)} alt={sel.title} label={sel.title} style={{ width: '100%', height: 'auto' }} />
+      <SmartThumb src={sel.img} fallback={svgThumb(sel)} alt={sel.title} label={sel.title} style={{ width: "100%", height: "auto" }} />
       <VStack gap={2}>
         <HStack gap={1} wrap="wrap" vAlign="center"><Badge variant="blue" label={`${sel.r}위`} /><FlagBadges a={sel} /></HStack>
         <Text weight="semibold">{sel.title}</Text>
@@ -431,7 +430,7 @@ function Popular() {
     return (
       <Card key={a.r} padding={5}>
         <VStack gap={4} height="100%">
-          <Thumbnail src={thumbSrc(a)} alt={a.title} label={a.title} onClick={() => setSel(a)} style={{ width: '100%', height: 'auto' }} />
+          <SmartThumb src={a.img} fallback={svgThumb(a)} alt={a.title} label={a.title} onClick={() => setSel(a)} style={{ width: "100%", height: "auto" }} />
           <HStack gap={1} wrap="wrap" vAlign="center"><Badge variant="blue" label={`${a.r}위`} /><FlagBadges a={a} /></HStack>
           <StackItem size="fill">
             <VStack gap={1}>
@@ -483,7 +482,7 @@ function Popular() {
   });
   const triageItems = filtered.filter((a) => !exposed[a.r]).map((a) => ({
     r: a.r, title: a.title, cafe: a.cafe, uv: a.uv, flags: a.flags as string[],
-    thumb: thumbSrc(a), cat: cats[a.r], catSuggest: suggest(a),
+    thumb: a.img ?? "", thumbFallback: svgThumb(a), cat: cats[a.r], catSuggest: suggest(a),
   }));
 
   return (

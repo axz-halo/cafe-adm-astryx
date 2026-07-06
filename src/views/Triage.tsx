@@ -12,13 +12,13 @@ import { ProgressBar } from '@astryxdesign/core/ProgressBar';
 import { Selector } from '@astryxdesign/core/Selector';
 import { ToggleButton } from '@astryxdesign/core/ToggleButton';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
-import { Thumbnail } from '@astryxdesign/core/Thumbnail';
+import { SmartThumb } from '../SmartThumb';
 
 // ── 검수 모드 — 마스터·디테일 트리아지 콘솔 ──
 // 좌: 콘텐츠 큐(클릭=미리보기) · 우: 대형 프리뷰 + 고정 액션 · 처리 시 자동으로 다음 글 선택
 export type TriageItem = {
   r: number; title: string; cafe: string; uv: number;
-  flags: string[]; thumb: string; cat?: string; catSuggest: string[];
+  flags: string[]; thumb: string; thumbFallback?: string; cat?: string; catSuggest: string[];
 };
 
 export function Triage({ items, categories, processed, total, counts, onExpose, onMove, onExclude, onCat }: {
@@ -105,7 +105,7 @@ export function Triage({ items, categories, processed, total, counts, onExpose, 
                   <ListItem key={a.r} label={a.title}
                     isSelected={!selectMode && i === curIdx}
                     onClick={() => (selectMode ? toggleCheck(a.r) : setSelIdx(i))}
-                    startContent={<Thumbnail src={a.thumb} alt={a.title} label={a.title} style={{ width: 44, height: 44 }} />}
+                    startContent={<SmartThumb src={a.thumb} fallback={a.thumbFallback ?? a.thumb} alt={a.title} label={a.title} style={{ width: 44, height: 44 }} />}
                     description={`${a.cafe} · UV ${a.uv.toLocaleString()}`}
                     endContent={
                       <HStack gap={1} vAlign="center" wrap="wrap">
@@ -131,7 +131,7 @@ export function Triage({ items, categories, processed, total, counts, onExpose, 
             </HStack>
             <Card padding={4}>
             <VStack gap={3}>
-              <Thumbnail src={cur.thumb} alt={cur.title} label={cur.title} style={{ width: '100%', height: 'auto' }} />
+              <SmartThumb src={cur.thumb} fallback={cur.thumbFallback ?? cur.thumb} alt={cur.title} label={cur.title} style={{ width: '100%', height: 'auto' }} />
               <VStack gap={1}>
                 <Text weight="semibold">{cur.title}</Text>
                 <HStack gap={2} vAlign="center" wrap="wrap">

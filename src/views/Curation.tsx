@@ -7,7 +7,7 @@ import { Button } from '@astryxdesign/core/Button';
 import { Badge } from '@astryxdesign/core/Badge';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Selector } from '@astryxdesign/core/Selector';
-import { Thumbnail } from '@astryxdesign/core/Thumbnail';
+import { SmartThumb } from '../SmartThumb';
 import { Banner } from '@astryxdesign/core/Banner';
 import { PageHeader } from './PageHeader';
 import { fmt, emojiThumb } from './shared';
@@ -101,8 +101,7 @@ export function Curation() {
               return (
                 <Card key={k} padding={4}>
                   <VStack gap={3} height="100%">
-                    <Thumbnail src={a.img || catThumb(cat.name, ci)} alt={a.title} label={a.title}
-                      onClick={() => a.url && a.url !== '#' && window.open(a.url, '_blank')} style={{ width: '100%', height: 'auto' }} />
+                    <SmartThumb src={a.img} fallback={catThumb(cat.name, ci)} alt={a.title} label={a.title} onClick={() => a.url && a.url !== "#" && window.open(a.url, "_blank")} style={{ width: "100%", height: "auto" }} />
                     <StackItem size="fill">
                       <VStack gap={1}>
                         <Text weight="medium" maxLines={2}>{a.title}</Text>

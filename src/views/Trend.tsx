@@ -12,7 +12,7 @@ import { Selector } from '@astryxdesign/core/Selector';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Banner } from '@astryxdesign/core/Banner';
 import { Divider } from '@astryxdesign/core/Divider';
-import { Thumbnail } from '@astryxdesign/core/Thumbnail';
+import { SmartThumb } from '../SmartThumb';
 import { PageHeader } from './PageHeader';
 import { fmt, emojiThumb } from './shared';
 import { fetchDailyArticles, deriveTrendKeywords, type ApiArticle } from '../api';
@@ -117,8 +117,7 @@ export function Trend() {
                             <Card key={a.permlink} padding={3}>
                               <HStack gap={3} vAlign="center">
                                 <Text weight="bold" color="secondary">{j + 1}</Text>
-                                <Thumbnail src={a.img || kwThumb(j)} alt={a.title} label={a.title}
-                                  onClick={() => a.link && a.link !== '#' && window.open(a.link, '_blank')} style={{ width: 48, height: 48 }} />
+                                <SmartThumb src={a.img} fallback={kwThumb(j)} alt={a.title} label={a.title} onClick={() => a.link && a.link !== "#" && window.open(a.link, "_blank")} style={{ width: 48, height: 48 }} />
                                 <VStack gap={0}>
                                   <Text weight="medium" maxLines={1}>{a.title}</Text>
                                   <HStack gap={2}><Text type="supporting" color="accent">{a.cafe}</Text><Text type="supporting" color="secondary">👁 {fmt(a.viewcnt)} · 💬 {fmt(a.cmtcnt)}</Text></HStack>

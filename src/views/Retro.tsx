@@ -9,7 +9,7 @@ import { Section } from '@astryxdesign/core/Section';
 import { Pagination } from '@astryxdesign/core/Pagination';
 import { SegmentedControl, SegmentedControlItem } from '@astryxdesign/core/SegmentedControl';
 import { Banner } from '@astryxdesign/core/Banner';
-import { Thumbnail } from '@astryxdesign/core/Thumbnail';
+import { SmartThumb } from '../SmartThumb';
 import { PageHeader } from './PageHeader';
 import { fmt, emojiThumb } from './shared';
 import { fetchPastArticles, weeklyAggdtCandidates, monthlyAggdtCandidates, type ApiArticle } from '../api';
@@ -78,7 +78,7 @@ export function Retro() {
             <Card key={a.permlink} padding={3}>
               <HStack gap={3} vAlign="center">
                 <Heading level={3}>{i + 1}</Heading>
-                <Thumbnail src={a.img || rowThumb(i)} alt={a.title} label={a.title} style={{ width: 56, height: 56 }} />
+                <SmartThumb src={a.img} fallback={rowThumb(i)} alt={a.title} label={a.title} style={{ width: 56, height: 56 }} />
                 <StackItem size="fill">
                   <VStack gap={0}>
                     <Text weight="medium" maxLines={2}>{a.title}</Text>
@@ -105,7 +105,7 @@ export function Retro() {
                 <Section key={a.permlink} padding={3}>
                   <HStack gap={3} vAlign="center">
                     <HStack width={40} justify="end"><Text weight="bold" color="secondary">{11 + (page - 1) * PAGE + i}</Text></HStack>
-                    <Thumbnail src={a.img || rowThumb(i + 3)} alt={a.title} label={a.title} style={{ width: 40, height: 40 }} />
+                    <SmartThumb src={a.img} fallback={rowThumb(i + 3)} alt={a.title} label={a.title} style={{ width: 40, height: 40 }} />
                     <StackItem size="fill"><Text weight="medium" maxLines={1}>{a.title}</Text></StackItem>
                     <Text type="supporting" color="accent">{a.cafe}</Text>
                     <HStack width={90} justify="end"><Text type="supporting" color="secondary">👁 {fmt(a.viewcnt)}</Text></HStack>
