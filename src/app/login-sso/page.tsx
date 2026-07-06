@@ -16,10 +16,22 @@ const TAGLINES = [
   'AI 초안, 사람의 최종 판단',
 ];
 
-// 사내 인증 연동 지점 — 실제로는 helloMIS(/rest/identity/members/auth)에 id·pw 검증.
-// 엔드포인트가 붙으면 이 함수만 교체.
+// 사내 인증 — serve.py /auth 프록시가 helloMIS(LDAP)로 id·pw 검증.
+// serve.py에 CAFEADM_HELLOMIS_URL/KEY 설정 시 실검증, 미설정 시 데모 통과.
+// /auth 자체가 없는 정적 배포(예: GitHub Pages)에서는 데모 통과로 폴백.
 async function authenticate(ldapId: string, password: string): Promise<boolean> {
-  return ldapId.trim().length > 0 && password.length > 0;
+  try {
+    const res = await fetch('/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: ldapId, pw: password }),
+    });
+    if (!res.ok) throw new Error('no-backend');
+    const data = await res.json();
+    return !!data.ok;
+  } catch {
+    return ldapId.trim().length > 0 && password.length > 0; // 백엔드 없음 → 데모
+  }
 }
 
 export default function LoginSSO({ onLogin }: { onLogin: (id: string) => void }) {

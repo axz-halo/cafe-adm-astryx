@@ -28,11 +28,8 @@ import { useMediaQuery } from '@astryxdesign/core/hooks';
 import {
   ArrowPathIcon, RocketLaunchIcon, Squares2X2Icon, QueueListIcon,
   FireIcon, RectangleStackIcon, ArrowTrendingUpIcon, CalendarDaysIcon, SparklesIcon,
-  ClipboardDocumentCheckIcon, NoSymbolIcon, ShieldExclamationIcon, FlagIcon, UsersIcon, HeartIcon, MagnifyingGlassIcon,
-  DevicePhoneMobileIcon, PhotoIcon, BanknotesIcon, ChartBarIcon, KeyIcon, ClipboardDocumentListIcon,
-  UserCircleIcon, ArrowRightStartOnRectangleIcon,
+  ClipboardDocumentCheckIcon, UserCircleIcon, ArrowRightStartOnRectangleIcon,
 } from '@heroicons/react/24/outline';
-import { HomeIcon } from '@heroicons/react/24/solid';
 import { Trend } from './views/Trend';
 import { Retro } from './views/Retro';
 import { Banner } from './views/Banner';
@@ -54,8 +51,7 @@ function CafeMark({ size = 28 }: { size?: number }) {
   );
 }
 
-// ── 메뉴 트리 ──
-// 실데이터 API 연동 대상 4개만 노출. 나머지 메뉴는 연동 전까지 hidden 처리(HIDDEN_NAV 보존).
+// ── 메뉴 트리 — 실데이터 API 연동 대상 4개 노출 ──
 const NAV = [
   { section: '콘텐츠 운영', items: [
     { key: 'popular', label: '노출 인기글 관리', icon: FireIcon },
@@ -64,25 +60,6 @@ const NAV = [
     { key: 'retro', label: '주간 · 월간 인기글', icon: CalendarDaysIcon },
   ]},
 ] as const;
-
-// 연동 전 숨김 — 이전 구현은 유지(App 라우팅에도 남아 있어 직접 접근 가능)
-const HIDDEN_NAV = [
-  { section: '콘텐츠 운영', items: [
-    { key: 'dashboard', label: '대시보드', icon: HomeIcon }, { key: 'reco', label: '추천 컨텐츠 관리', icon: SparklesIcon },
-  ]},
-  { section: '검수 · 정책', items: [
-    { key: 'queue', label: '검수 큐', count: '23', icon: ClipboardDocumentCheckIcon }, { key: 'words', label: '금칙어 · 규제 키워드', icon: NoSymbolIcon },
-    { key: 'block', label: '노출제외 · 블랙 관리', icon: ShieldExclamationIcon }, { key: 'report', label: '신고 처리', count: '7', icon: FlagIcon },
-  ]},
-  { section: '관리', items: [
-    { key: 'search', label: '통합 검색 · 360', icon: MagnifyingGlassIcon },
-    { key: 'members', label: '개별카페 · 회원 관리', icon: UsersIcon }, { key: 'fancafe', label: '팬카페 관리', icon: HeartIcon },
-    { key: 'apphome', label: '모바일앱 · 카페 탑', icon: DevicePhoneMobileIcon }, { key: 'banner', label: '카페배너', icon: PhotoIcon },
-  ]},
-  { section: '정산 · 분석', items: [{ key: 'profit', label: '수익 · 정산', icon: BanknotesIcon }, { key: 'stat', label: '통계', icon: ChartBarIcon }]},
-  { section: '시스템', items: [{ key: 'roles', label: '권한요청', icon: KeyIcon }, { key: 'deploy', label: '배포일지', icon: ClipboardDocumentListIcon }]},
-] as const;
-void HIDDEN_NAV;
 const LABELS: Record<string, string> = Object.fromEntries(NAV.flatMap((s) => s.items.map((i) => [i.key, i.label])));
 
 // ── 실제 어드민(노출 인기글 관리) 데이터 구조 ──

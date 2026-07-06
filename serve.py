@@ -5,12 +5,14 @@
   - /            → ./dist (Vite 빌드된 SPA)  [SPA 폴백 포함]
   - /api/popular/* → cbt2-cafe-popular-api.dev.daum.net (사내망) 포워딩  [GET, /popular/* 만 허용]
   - /img?u=<url>   → daum CDN 이미지 중계(Referer 부여)  [daumcdn/kakaocdn 호스트만 허용]
+  - POST /auth     → LDAP 로그인 검증(helloMIS). env CAFEADM_HELLOMIS_URL/KEY 설정 시 실검증, 미설정 시 데모 통과.
 
 보안: /api·/img 는 화이트리스트로 제한(오픈 프록시·SSRF 차단).
 ⚠️ 접근 인증은 이 서버에 없음 — 실서비스는 리버스 프록시(SSO)·사내망 IP 제한 뒤에 두세요.
 
 사용:  npm run build && python3 serve.py [PORT]   → http://<이 호스트>:<PORT>/
 """
+import json
 import os
 import sys
 import http.server
@@ -26,6 +28,11 @@ UA = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)"}
 # 화이트리스트
 ALLOWED_API_PREFIXES = ("/popular/",)                    # 인기글 조회 API만
 ALLOWED_IMG_HOSTS = (".daumcdn.net", ".kakaocdn.net")    # 카페 첨부 CDN만
+
+# helloMIS(사내 LDAP 인증) — URL·authkey는 env로 주입(레포에 시크릿 미포함).
+# 미설정 시 데모 통과 모드(비어있지 않은 입력만 허용). 운영에선 반드시 설정.
+HELLOMIS_URL = os.environ.get("CAFEADM_HELLOMIS_URL", "").rstrip("/")
+HELLOMIS_KEY = os.environ.get("CAFEADM_HELLOMIS_KEY", "")
 
 
 def _img_host_ok(url: str) -> bool:
@@ -49,8 +56,53 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        # 쓰기/그 외 메서드는 프록시하지 않음(오픈 프록시 방지)
+        if urllib.parse.urlparse(self.path).path == "/auth":
+            return self._auth()
+        # 그 외 메서드/경로는 프록시하지 않음(오픈 프록시 방지)
         self.send_error(405)
+
+    def _auth(self):
+        """LDAP 로그인 검증 — helloMIS로 id/pw 확인. 미설정 시 데모 통과."""
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except Exception:
+            body = {}
+        uid = str(body.get("id", "")).strip()
+        pw = str(body.get("pw", ""))
+        if not uid or not pw:
+            return self._json(200, {"ok": False, "error": "empty"})
+        if not (HELLOMIS_URL and HELLOMIS_KEY):
+            return self._json(200, {"ok": True, "id": uid, "name": uid, "mode": "dev"})
+        ip = self.client_address[0] if self.client_address else "unknown"
+        try:
+            form = urllib.parse.urlencode({"id": uid, "pw": pw, "userip": ip}).encode()
+            req = urllib.request.Request(
+                HELLOMIS_URL + "/rest/identity/members/auth", data=form, method="POST",
+                headers={"authkey": HELLOMIS_KEY, "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                authres = json.loads(resp.read() or b"{}")
+        except Exception:
+            return self._json(502, {"ok": False, "error": "auth upstream"})
+        if (authres.get("result") or {}).get("authcode") != "AUTH_SUCCESS":
+            return self._json(200, {"ok": False})
+        # 프로필(선택) — 이름·부서·사번
+        name, dept, empno = uid, "", ""
+        try:
+            preq = urllib.request.Request(
+                HELLOMIS_URL + "/rest/identity/members/id/" + urllib.parse.quote(uid),
+                headers={"authkey": HELLOMIS_KEY, "Accept": "application/json"})
+            with urllib.request.urlopen(preq, timeout=6) as presp:
+                m = ((json.loads(presp.read() or b"{}").get("result") or {}).get("memberlist") or [{}])[0]
+            name = m.get("personName") or uid
+            dept = m.get("deptName") or ""
+            empno = m.get("employeeNo") or ""
+        except Exception:
+            pass
+        return self._json(200, {"ok": True, "id": uid, "name": name, "dept": dept, "employeeNo": empno, "mode": "hellomis"})
+
+    def _json(self, status, obj):
+        self._reply(status, "application/json; charset=utf-8", json.dumps(obj, ensure_ascii=False).encode())
 
     def _proxy(self, method):
         path = self.path[len("/api"):]
