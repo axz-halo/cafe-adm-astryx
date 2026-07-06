@@ -111,7 +111,58 @@ export async function fetchCategoryArticles(y: number, mo: number, day: number, 
   return [...byId.values()];
 }
 
-// ── 트렌드 파생 — 전용 API가 없어 실시간 인기글 corpus에서 키워드 빈도 집계 ──
+// ── 실시간 트렌드 키워드 (adm-table /realtime-trend, serve.py /trend 중계) ──
+// searchTermsAdm[{term,count,isNew,status,score}] 중 status==SELECTION = 어드민 노출 랭킹(20).
+export type TrendTerm = { term: string; count: number; isNew: boolean; score: number; rank: number; delta: number | null };
+export type TrendData = { key: string; selection: TrendTerm[]; black: string[] };
+
+// KST(사내망 서버 로컬=KST 가정) 기준 현재 시각부터 과거로 ymdh 후보
+export function trendYmdhCandidates(now = new Date()): string[] {
+  const out: string[] = [];
+  const d = new Date(now);
+  for (let i = 0; i < 6; i++) {
+    out.push(`${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}`);
+    d.setHours(d.getHours() - 1);
+  }
+  return out;
+}
+const pad = (n: number) => String(n).padStart(2, '0');
+
+async function getTrend(key: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`/trend?key=${key}`, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+const selectionSorted = (raw: unknown): Record<string, any>[] =>
+  ((raw as { searchTermsAdm?: Record<string, any>[] })?.searchTermsAdm ?? [])
+    .filter((t) => t.status === 'SELECTION').sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+
+export async function fetchTrend(candidates: string[]): Promise<TrendData | null> {
+  for (let i = 0; i < candidates.length; i++) {
+    const key = candidates[i];
+    let cur: Record<string, unknown>;
+    try { cur = await getTrend(key); } catch { continue; }
+    const sel = selectionSorted(cur);
+    if (!sel.length) continue;
+    // 이전 시간대 순위로 증감 계산
+    const prevRank: Record<string, number> = {};
+    if (candidates[i + 1]) {
+      try { selectionSorted(await getTrend(candidates[i + 1])).forEach((t, idx) => { prevRank[t.term] = idx + 1; }); } catch { /* noop */ }
+    }
+    const selection: TrendTerm[] = sel.map((t, idx) => {
+      const rank = idx + 1;
+      const prev = prevRank[t.term];
+      const delta = t.isNew || prev == null ? null : prev - rank; // +상승 / -하락 / 0 유지
+      return { term: decodeEntities(String(t.term)), count: Number(t.count ?? 0), isNew: !!t.isNew, score: Number(t.score ?? 0), rank, delta };
+    });
+    const black = ((cur as { searchTermsAdm?: Record<string, any>[] }).searchTermsAdm ?? [])
+      .filter((t) => t.status === 'BLACK_KEYWORD').map((t) => decodeEntities(String(t.term)));
+    return { key, selection, black };
+  }
+  return null;
+}
+
+// ── 트렌드 파생(폴백) — /trend 불가 시 실시간 인기글 제목 키워드 빈도 ──
 const STOP = new Set(['그리고', '하는', '있는', '없는', '너무', '진짜', '오늘', '근황', 'the', 'jpg', 'twt', 'gif', 'feat', '이거', '이건', '근데', '해서', '하고', '보고', '보는', '있다', '했다']);
 export function deriveTrendKeywords(articles: ApiArticle[], limit = 20): { w: string; count: number; views: number }[] {
   const map = new Map<string, { count: number; views: number }>();

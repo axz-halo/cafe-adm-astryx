@@ -6,6 +6,7 @@
   - /api/popular/* → cbt2-cafe-popular-api.dev.daum.net (사내망) 포워딩  [GET, /popular/* 만 허용]
   - /img?u=<url>   → daum CDN 이미지 중계(Referer 부여)  [daumcdn/kakaocdn 호스트만 허용]
   - POST /auth     → LDAP 로그인 검증(helloMIS). env CAFEADM_HELLOMIS_URL/KEY 설정 시 실검증, 미설정 시 데모 통과.
+  - /trend?key=<ymdh> → 실시간 트렌드 키워드(adm-table) 중계. loginToken은 env CAFEADM_TREND_TOKEN.
 
 보안: /api·/img 는 화이트리스트로 제한(오픈 프록시·SSRF 차단).
 ⚠️ 접근 인증은 이 서버에 없음 — 실서비스는 리버스 프록시(SSO)·사내망 IP 제한 뒤에 두세요.
@@ -34,6 +35,10 @@ ALLOWED_IMG_HOSTS = (".daumcdn.net", ".kakaocdn.net")    # 카페 첨부 CDN만
 HELLOMIS_URL = os.environ.get("CAFEADM_HELLOMIS_URL", "").rstrip("/")
 HELLOMIS_KEY = os.environ.get("CAFEADM_HELLOMIS_KEY", "")
 
+# 실시간 트렌드 키워드(adm-table) — loginToken은 env로만 주입(레포/로그 금지).
+TREND_UPSTREAM = os.environ.get("CAFEADM_TREND_URL", "https://adm-table.onkakao.net/realtime-trend")
+TREND_TOKEN = os.environ.get("CAFEADM_TREND_TOKEN", "")
+
 
 def _img_host_ok(url: str) -> bool:
     host = (urllib.parse.urlparse(url).hostname or "").lower()
@@ -49,6 +54,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._proxy("GET")
         if self.path.startswith("/img"):
             return self._img()
+        if self.path.startswith("/trend"):
+            return self._trend()
         path = urllib.parse.urlparse(self.path).path
         fs = os.path.join(DIST, path.lstrip("/"))
         if path != "/" and not os.path.isfile(fs):
@@ -103,6 +110,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _json(self, status, obj):
         self._reply(status, "application/json; charset=utf-8", json.dumps(obj, ensure_ascii=False).encode())
+
+    def _trend(self):
+        """실시간 트렌드 키워드 중계 — adm-table. loginToken은 서버 env로만 주입."""
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        key = q.get("key", [""])[0]
+        if not key.isdigit():
+            return self._json(400, {"error": "bad key"})
+        if not TREND_TOKEN:
+            return self._json(503, {"error": "trend token not configured"})
+        try:
+            url = "%s?key=%s&loginToken=%s" % (TREND_UPSTREAM, key, urllib.parse.quote(TREND_TOKEN))
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                self._reply(200, "application/json; charset=utf-8", resp.read())
+        except Exception:
+            self._reply(502, "application/json", b'{"error":"trend upstream"}')
 
     def _proxy(self, method):
         path = self.path[len("/api"):]
