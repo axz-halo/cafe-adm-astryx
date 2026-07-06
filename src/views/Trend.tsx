@@ -112,17 +112,19 @@ export function Trend() {
                     <Section variant="muted" padding={4}>
                       <VStack gap={3}>
                         <Text weight="bold">🔥 “{o.w}” 대표 인기글 {arts.length}건</Text>
-                        <Grid columns={{ minWidth: 260 }} gap={3}>
+                        <Grid columns={{ minWidth: 200 }} gap={3}>
                           {arts.map((a, j) => (
                             <Card key={a.permlink} padding={3}>
-                              <HStack gap={3} vAlign="center">
-                                <Text weight="bold" color="secondary">{j + 1}</Text>
-                                <SmartThumb src={a.img} fallback={kwThumb(j)} alt={a.title} label={a.title} onClick={() => a.link && a.link !== "#" && window.open(a.link, "_blank")} style={{ width: 48, height: 48 }} />
-                                <VStack gap={0}>
-                                  <Text weight="medium" maxLines={1}>{a.title}</Text>
-                                  <HStack gap={2}><Text type="supporting" color="accent">{a.cafe}</Text><Text type="supporting" color="secondary">👁 {fmt(a.viewcnt)} · 💬 {fmt(a.cmtcnt)}</Text></HStack>
-                                </VStack>
-                              </HStack>
+                              <VStack gap={2} height="100%">
+                                <SmartThumb src={a.img} fallback={kwThumb(j)} alt={a.title} label={a.title}
+                                  onClick={() => a.link && a.link !== '#' && window.open(a.link, '_blank')} style={{ width: '100%', height: 'auto' }} />
+                                <HStack gap={1} vAlign="center"><Badge variant={j < 3 ? 'red' : 'neutral'} label={`${j + 1}위`} /></HStack>
+                                <StackItem size="fill"><Text weight="medium" maxLines={2}>{a.title}</Text></StackItem>
+                                <HStack gap={2} wrap="wrap">
+                                  <Text type="supporting" color="accent" maxLines={1}>{a.cafe}</Text>
+                                  <Text type="supporting" color="secondary">👁 {fmt(a.viewcnt)} · 💬 {fmt(a.cmtcnt)}</Text>
+                                </HStack>
+                              </VStack>
                             </Card>
                           ))}
                         </Grid>
