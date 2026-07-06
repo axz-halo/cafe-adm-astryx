@@ -113,7 +113,7 @@ export default function LoginSSO({ onLogin }: { onLogin: (id: string, mode?: str
               <Button label="로그인" variant="primary" size="lg" isLoading={isLoading} onClick={handleSignIn} isDisabled={!canSubmit} />
 
               <VStack hAlign="center">
-                <Text type="supporting" color="secondary">권한이 없나요? <Link href="#" type="supporting">권한요청 바로가기</Link></Text>
+                <Text type="supporting" color="secondary">권한이 없나요? <Link href="https://kakao.agit.in/g/300010604/wall" target="_blank" type="supporting">권한요청 바로가기</Link></Text>
               </VStack>
             </VStack>
           </div>
