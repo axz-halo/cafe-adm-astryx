@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@astryxdesign/core/AppShell';
-import { NavIcon } from '@astryxdesign/core/NavIcon';
 import { SideNav, SideNavHeading, SideNavSection, SideNavItem } from '@astryxdesign/core/SideNav';
 import { Layout, LayoutHeader, LayoutContent, LayoutPanel, VStack, HStack, StackItem } from '@astryxdesign/core/Layout';
 import { Grid } from '@astryxdesign/core/Grid';
@@ -31,7 +30,7 @@ import {
   FireIcon, RectangleStackIcon, ArrowTrendingUpIcon, CalendarDaysIcon, SparklesIcon,
   ClipboardDocumentCheckIcon, NoSymbolIcon, ShieldExclamationIcon, FlagIcon, UsersIcon, HeartIcon, MagnifyingGlassIcon,
   DevicePhoneMobileIcon, PhotoIcon, BanknotesIcon, ChartBarIcon, KeyIcon, ClipboardDocumentListIcon,
-  UserCircleIcon, ArrowRightStartOnRectangleIcon, BuildingStorefrontIcon,
+  UserCircleIcon, ArrowRightStartOnRectangleIcon,
 } from '@heroicons/react/24/outline';
 import { HomeIcon } from '@heroicons/react/24/solid';
 import { Trend } from './views/Trend';
@@ -45,6 +44,19 @@ import { Triage } from './views/Triage';
 import LoginSSO from './app/login-sso/page';
 import { fetchDailyArticles } from './api';
 import { SmartThumb } from './SmartThumb';
+
+// 다음카페 브랜드 마크 — 빨간 원형 + cafe 워드마크
+function CafeMark({ size = 28 }: { size?: number }) {
+  return (
+    <span style={{ display: 'inline-flex', width: size, height: size }} aria-label="Daum Cafe">
+      <svg width={size} height={size} viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="20" cy="20" r="20" fill="#FE1E1E" />
+        <text x="20" y="21" textAnchor="middle" dominantBaseline="central"
+          fontFamily="Pretendard, -apple-system, 'Apple SD Gothic Neo', sans-serif" fontWeight={800} fontSize={13} fill="#fff">cafe</text>
+      </svg>
+    </span>
+  );
+}
 
 // ── 메뉴 트리 ──
 // 실데이터 API 연동 대상 4개만 노출. 나머지 메뉴는 연동 전까지 hidden 처리(HIDDEN_NAV 보존).
@@ -608,8 +620,8 @@ export default function App() {
         <SideNav
           header={
             <SideNavHeading
-              icon={<NavIcon icon={<BuildingStorefrontIcon style={{ width: 16, height: 16 }} />} />}
-              heading="cafe ADM" subheading="통합 운영 어드민"
+              icon={<CafeMark size={28} />}
+              heading="Daum Cafe Admin" subheading="다음카페 통합 운영 어드민"
             />
           }
           collapsible>
