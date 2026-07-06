@@ -111,6 +111,26 @@ export async function fetchCategoryArticles(y: number, mo: number, day: number, 
   return [...byId.values()];
 }
 
+// ── 인기글 상태변경(제외/복원) — serve.py /write/popular/* (세션 필수) ──
+// ban=제외(status P) / unban=노출 복원(status S). serve.py가 세션 검증 후 cafe-popular-api 어드민에 반영.
+// mode: 'live'(실반영) | 'dry-run'(미반영, 서버 WRITE 비활성) | 'error'.
+export type WriteResult = { ok: boolean; mode: string; error?: string };
+export async function setPopularBan(a: { grpcode: string; fldid: string; dataid: string | number }, ban: boolean): Promise<WriteResult> {
+  const body = new URLSearchParams({ grpcode: a.grpcode, fldid: a.fldid, dataid: String(a.dataid) });
+  try {
+    const res = await fetch(`/write/popular/${ban ? 'ban' : 'unban'}`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body,
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.status === 401) return { ok: false, mode: 'error', error: 'unauthorized' };
+    if (!res.ok) return { ok: false, mode: 'error', error: String((d as { error?: string }).error ?? res.status) };
+    return { ok: !!(d as { ok?: boolean }).ok, mode: String((d as { mode?: string }).mode ?? 'unknown') };
+  } catch {
+    return { ok: false, mode: 'error', error: 'network' };
+  }
+}
+
 // ── 실시간 트렌드 키워드 (adm-table /realtime-trend, serve.py /trend 중계) ──
 // searchTermsAdm[{term,count,isNew,status,score}] 중 status==SELECTION = 어드민 노출 랭킹(20).
 export type TrendTerm = { term: string; count: number; isNew: boolean; score: number; rank: number; delta: number | null };

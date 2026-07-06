@@ -40,7 +40,7 @@ import { PageHeader } from './views/PageHeader';
 import { Triage } from './views/Triage';
 import LoginSSO from './app/login-sso/page';
 import { Banner as AstryxBanner } from '@astryxdesign/core/Banner';
-import { fetchDailyArticles } from './api';
+import { fetchDailyArticles, setPopularBan } from './api';
 import { SmartThumb } from './SmartThumb';
 
 // 다음카페 브랜드 마크 — 공식 앱 아이콘(favicon 에셋 재사용, base 경로 안전)
@@ -69,6 +69,7 @@ type Art = {
   r: number; title: string; cafe: string; cat?: string; emoji: string; bg: Bg;
   uv: number; age: string; flags: Flag[]; reports?: number;
   img?: string; cmt?: number; link?: string; real?: boolean; // 실데이터 연동 필드
+  grpcode?: string; fldid?: string; dataid?: string; // 상태변경(제외/복원) 대상 식별자
 };
 // 2026-07-02 10시 실서버 수집분 기준 샘플 (실제 화면 데이터 반영)
 const ARTICLES: Art[] = [
@@ -228,8 +229,9 @@ function Dashboard({ onGo }: { onGo: (v: string) => void }) {
 }
 
 // 상세 본문 — 실제 카드 컨트롤(노출 옵션 + 카테고리 + 노출) 포함
-function DetailBody({ sel, exposed, opts, cats, aiCats, onExpose, onOpt, onCat, onAiCat, onClose }: {
+function DetailBody({ sel, exposed, opts, cats, aiCats, isBanned, banBusy, canBan, onBan, onExpose, onOpt, onCat, onAiCat, onClose }: {
   sel: Art; exposed: Record<number, boolean>; opts: Record<number, Opts>; cats: Record<number, string>; aiCats: string[];
+  isBanned: boolean; banBusy: boolean; canBan: boolean; onBan: (ban: boolean) => void;
   onExpose: (a: Art) => void; onOpt: (r: number, k: keyof Opts, v: boolean) => void; onCat: (r: number, c: string | null) => void; onAiCat: (c: string) => void; onClose: () => void;
 }) {
   const o = opts[sel.r] ?? DEFAULT_OPTS;
@@ -289,6 +291,15 @@ function DetailBody({ sel, exposed, opts, cats, aiCats, onExpose, onOpt, onCat, 
       {exposed[sel.r]
         ? <HStack gap={2} vAlign="center"><StatusDot variant="success" label="노출 완료" /><Text type="supporting" color="secondary">10:00 노출 · halo.axz</Text></HStack>
         : <Button label="노출하기" variant="primary" onClick={() => onExpose(sel)} />}
+      {/* 실제 서버 반영 — 인기글 제외(P)/복원(S) */}
+      <VStack gap={2}>
+        <Text type="label">인기글 노출 상태 (서버 반영)</Text>
+        {!canBan
+          ? <Text type="supporting" color="secondary">실데이터 글에만 상태변경이 가능합니다.</Text>
+          : isBanned
+            ? <HStack gap={2} vAlign="center"><StatusDot variant="error" label="제외됨(status P)" /><StackItem size="fill" /><Button label="노출 복원" variant="secondary" size="sm" isLoading={banBusy} onClick={() => onBan(false)} /></HStack>
+            : <Button label="인기글에서 제외" variant="secondary" size="sm" isLoading={banBusy} onClick={() => onBan(true)} />}
+      </VStack>
     </VStack>
   );
 }
@@ -323,6 +334,7 @@ function Popular() {
         const mapped: Art[] = arts.map((a) => ({
           r: a.rnum, title: a.title, cafe: a.cafe, emoji: '', bg: 'gray',
           uv: a.viewcnt, cmt: a.cmtcnt, age: '', flags: [], img: a.img, link: a.link, real: true,
+          grpcode: a.grpcode, fldid: a.fldid, dataid: a.dataid,
         }));
         setLive(mapped);
         setDataMode('live');
@@ -350,6 +362,29 @@ function Popular() {
   const toggleExpose = (a: Art) => setExposed((e) => ({ ...e, [a.r]: !e[a.r] }));
   const setOpt = (r: number, k: keyof Opts, v: boolean) => setOpts((m) => ({ ...m, [r]: { ...(m[r] ?? DEFAULT_OPTS), [k]: v } }));
   const setCat = (r: number, c: string | null) => setCats((m) => { const n = { ...m }; if (c) n[r] = c; else delete n[r]; return n; });
+
+  // ── 인기글 상태변경(제외/복원) — 실제 서버 반영(세션 필수, 기본 dry-run) ──
+  const [banned, setBanned] = useState<Record<number, boolean>>({});
+  const [banBusy, setBanBusy] = useState<Record<number, boolean>>({});
+  const [writeNote, setWriteNote] = useState<{ status: 'success' | 'error' | 'info'; msg: string } | null>(null);
+  const canWrite = (a: Art) => !!(a.grpcode && a.fldid && a.dataid);
+  const setArticleBan = async (a: Art, ban: boolean) => {
+    if (!canWrite(a)) { setWriteNote({ status: 'error', msg: '실데이터 글에만 상태변경이 가능합니다(샘플 글 불가).' }); return; }
+    if (banBusy[a.r]) return;
+    const prev = !!banned[a.r];
+    setBanBusy((m) => ({ ...m, [a.r]: true }));
+    setBanned((m) => ({ ...m, [a.r]: ban })); // 낙관적 업데이트
+    const res = await setPopularBan({ grpcode: a.grpcode!, fldid: a.fldid!, dataid: a.dataid! }, ban);
+    setBanBusy((m) => { const n = { ...m }; delete n[a.r]; return n; });
+    if (res.ok) {
+      const tail = res.mode === 'dry-run' ? ' (dry-run · 미반영)' : ' · 반영됨';
+      setWriteNote({ status: res.mode === 'dry-run' ? 'info' : 'success', msg: `"${a.title.slice(0, 24)}…" ${ban ? '제외' : '복원'}${tail}` });
+    } else {
+      setBanned((m) => ({ ...m, [a.r]: prev })); // 롤백
+      const why = res.error === 'unauthorized' ? '세션 만료 — 다시 로그인하세요.' : '연결/권한을 확인하세요.';
+      setWriteNote({ status: 'error', msg: `상태변경 실패 — ${why}` });
+    }
+  };
 
   const exposedCount = sourceAll.filter((a) => exposed[a.r]).length;
   const excludedCount = sourceAll.filter((a) => excluded[a.r]).length;
@@ -449,6 +484,9 @@ function Popular() {
             <Button label="AI 분류" variant="secondary" size="sm" icon={<Icon icon={SparklesIcon} size="sm" />} onClick={() => setCat(a.r, suggest(a)[0])} />
           </HStack>
           <Button label={exposed[a.r] ? '노출완료' : '노출하기'} variant={exposed[a.r] ? 'secondary' : 'primary'} onClick={() => toggleExpose(a)} />
+          {canWrite(a) && (banned[a.r]
+            ? <HStack gap={2} vAlign="center"><StatusDot variant="error" label="제외됨(P)" /><StackItem size="fill" /><Button label="복원" variant="secondary" size="sm" isLoading={banBusy[a.r]} onClick={() => setArticleBan(a, false)} /></HStack>
+            : <Button label="인기글 제외" variant="ghost" size="sm" isLoading={banBusy[a.r]} onClick={() => setArticleBan(a, true)} />)}
         </VStack>
       </Card>
     );
@@ -544,13 +582,18 @@ function Popular() {
               <AstryxBanner status="warning" title="라이브 미연결 — 샘플 표시 중"
                 description="사내망 API(/api)에 연결되지 않아 아래는 실시간이 아닌 샘플 글입니다. 사내망 배포 서버(:8080)로 접속하면 실시간 인기글이 표시됩니다." />
             )}
+            {writeNote && (
+              <AstryxBanner status={writeNote.status} title={writeNote.msg}
+                description={writeNote.status === 'info' ? '서버가 dry-run 모드입니다(CAFEADM_WRITE_ENABLED 미설정) — 실제 인기글에는 반영되지 않았습니다.' : undefined}
+                isDismissable onDismiss={() => setWriteNote(null)} />
+            )}
             {viewMode === 'triage' && (
               <Triage items={triageItems} categories={CATEGORIES}
                 processed={exposedCount + excludedCount + movedCount} total={sourceAll.length}
                 counts={{ exposed: exposedCount, moved: movedCount, excluded: excludedCount }}
                 onExpose={(r) => setExposed((e) => ({ ...e, [r]: true }))}
                 onMove={(r) => setMoved((m) => ({ ...m, [r]: true }))}
-                onExclude={(r) => setExcluded((e) => ({ ...e, [r]: true }))}
+                onExclude={(r) => { setExcluded((e) => ({ ...e, [r]: true })); const a = sourceAll.find((x) => x.r === r); if (a) setArticleBan(a, true); }}
                 onCat={(r, c) => setCat(r, c)} />
             )}
             {viewMode !== 'triage' && rows.map(([key, r]) => (
@@ -562,7 +605,7 @@ function Popular() {
                     {groupContent(r)}
                   </Collapsible>
             ))}
-            {viewMode !== 'triage' && isNarrow && sel && (<><Divider /><DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} aiCats={suggest(sel)} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onAiCat={(c) => setCat(sel.r, c)} onClose={() => setSel(null)} /></>)}
+            {viewMode !== 'triage' && isNarrow && sel && (<><Divider /><DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} aiCats={suggest(sel)} isBanned={!!banned[sel.r]} banBusy={!!banBusy[sel.r]} canBan={canWrite(sel)} onBan={(b) => setArticleBan(sel, b)} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onAiCat={(c) => setCat(sel.r, c)} onClose={() => setSel(null)} /></>)}
           </VStack>
         </LayoutContent>
       }
@@ -570,7 +613,7 @@ function Popular() {
         <>
           <ResizeHandle resizable={panel.props} isReversed isAlwaysVisible={false} />
           <LayoutPanel hasDivider label="게시글 상세" resizable={panel.props as never}>
-            <DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} aiCats={suggest(sel)} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onAiCat={(c) => setCat(sel.r, c)} onClose={() => setSel(null)} />
+            <DetailBody sel={sel} exposed={exposed} opts={opts} cats={cats} aiCats={suggest(sel)} isBanned={!!banned[sel.r]} banBusy={!!banBusy[sel.r]} canBan={canWrite(sel)} onBan={(b) => setArticleBan(sel, b)} onExpose={toggleExpose} onOpt={setOpt} onCat={setCat} onAiCat={(c) => setCat(sel.r, c)} onClose={() => setSel(null)} />
           </LayoutPanel>
         </>
       )}

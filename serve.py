@@ -6,16 +6,24 @@
   - /api/popular/* → cbt2-cafe-popular-api.dev.daum.net (사내망) 포워딩  [GET, /popular/* 만 허용]
   - /img?u=<url>   → daum CDN 이미지 중계(Referer 부여)  [daumcdn/kakaocdn 호스트만 허용]
   - POST /auth     → LDAP 로그인 검증(helloMIS). env CAFEADM_HELLOMIS_URL/KEY 설정 시 실검증, 미설정 시 데모 통과.
+                      성공 시 HMAC 서명 세션 쿠키(cafeadm_sess) 발급.
   - /trend?key=<ymdh> → 실시간 트렌드 키워드(adm-table) 중계. loginToken은 env CAFEADM_TREND_TOKEN.
+  - POST /write/popular/{ban|unban} → 인기글 제외(P)/복원(S). 세션 필수. 기본 dry-run,
+                      env CAFEADM_WRITE_ENABLED=1 일 때만 cafe-popular-api 어드민에 실제 반영.
 
 보안: /api·/img 는 화이트리스트로 제한(오픈 프록시·SSRF 차단).
 ⚠️ 접근 인증은 이 서버에 없음 — 실서비스는 리버스 프록시(SSO)·사내망 IP 제한 뒤에 두세요.
 
 사용:  npm run build && python3 serve.py [PORT]   → http://<이 호스트>:<PORT>/
 """
+import base64
+import hashlib
+import hmac
 import json
 import os
+import re
 import sys
+import time
 import http.server
 import urllib.error
 import urllib.parse
@@ -38,6 +46,38 @@ HELLOMIS_KEY = os.environ.get("CAFEADM_HELLOMIS_KEY", "")
 # 실시간 트렌드 키워드(adm-table) — loginToken은 env로만 주입(레포/로그 금지).
 TREND_UPSTREAM = os.environ.get("CAFEADM_TREND_URL", "https://adm-table.onkakao.net/realtime-trend")
 TREND_TOKEN = os.environ.get("CAFEADM_TREND_TOKEN", "")
+
+# ── 쓰기(인기글 상태변경) ──
+# 로그인 세션을 HMAC 서명 쿠키로 발급하고, 쓰기 요청은 유효 세션이 있어야만 허용한다.
+# SESSION_SECRET 미설정 시 프로세스 기동마다 무작위 생성(재기동 시 기존 세션 무효화).
+SESSION_SECRET = os.environ.get("CAFEADM_SESSION_SECRET") or base64.b64encode(os.urandom(32)).decode()
+SESSION_TTL = int(os.environ.get("CAFEADM_SESSION_TTL", str(8 * 3600)))
+# 실제 업스트림 반영 스위치. 기본 off = dry-run(프록시·UI 플로우만 검증, 프로덕션 미반영).
+WRITE_ENABLED = os.environ.get("CAFEADM_WRITE_ENABLED", "").lower() in ("1", "true", "yes", "on")
+# 허용 쓰기 액션 → cafe-popular-api 어드민 엔드포인트 (P:제외 / S:노출복원)
+ALLOWED_WRITE = {
+    "/write/popular/ban": "/admin/articles/popular/ban",           # status=P (인기글 제외)
+    "/write/popular/unban": "/admin/articles/popular/ban/remove",  # status=S (노출 복원)
+}
+
+
+def _make_session(user):
+    exp = str(int(time.time()) + SESSION_TTL)
+    raw = "%s|%s" % (user, exp)
+    sig = hmac.new(SESSION_SECRET.encode(), raw.encode(), hashlib.sha256).hexdigest()
+    return base64.urlsafe_b64encode(("%s|%s" % (raw, sig)).encode()).decode()
+
+
+def _verify_session(tok):
+    try:
+        raw = base64.urlsafe_b64decode(tok.encode()).decode()
+        user, exp, sig = raw.rsplit("|", 2)
+        expect = hmac.new(SESSION_SECRET.encode(), ("%s|%s" % (user, exp)).encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expect) or int(exp) < int(time.time()):
+            return None
+        return user
+    except Exception:
+        return None
 
 
 def _img_host_ok(url: str) -> bool:
@@ -63,10 +103,49 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        if urllib.parse.urlparse(self.path).path == "/auth":
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/auth":
             return self._auth()
+        if path in ALLOWED_WRITE:
+            return self._write(path)
         # 그 외 메서드/경로는 프록시하지 않음(오픈 프록시 방지)
         self.send_error(405)
+
+    def _session_user(self):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            part = part.strip()
+            if part.startswith("cafeadm_sess="):
+                return _verify_session(part[len("cafeadm_sess="):])
+        return None
+
+    def _write(self, path):
+        """인기글 제외/복원 — 세션 필수, 엄격 검증, 기본 dry-run."""
+        user = self._session_user()
+        if not user:
+            return self._json(401, {"ok": False, "error": "unauthorized"})
+        length = int(self.headers.get("Content-Length") or 0)
+        params = urllib.parse.parse_qs((self.rfile.read(length) or b"").decode("utf-8", "replace"))
+        grpcode = params.get("grpcode", [""])[0].strip()
+        fldid = params.get("fldid", [""])[0].strip()
+        dataid = params.get("dataid", [""])[0].strip()
+        if not (re.fullmatch(r"[A-Za-z0-9_-]{1,40}", grpcode) and re.fullmatch(r"[A-Za-z0-9]{1,20}", fldid) and re.fullmatch(r"[0-9]{1,20}", dataid)):
+            return self._json(400, {"ok": False, "error": "bad params"})
+        action = "ban" if path.endswith("/ban") else "unban"
+        # 감사 로그(사용자·액션·대상만 — 토큰/비밀 없음)
+        sys.stderr.write("[AUDIT] user=%s action=%s target=%s/%s/%s live=%s\n" % (user, action, grpcode, fldid, dataid, WRITE_ENABLED))
+        sys.stderr.flush()
+        if not WRITE_ENABLED:
+            return self._json(200, {"ok": True, "mode": "dry-run", "action": action})
+        form = urllib.parse.urlencode({"grpcode": grpcode, "fldid": fldid, "dataid": dataid}).encode()
+        try:
+            req = urllib.request.Request(
+                UPSTREAM + ALLOWED_WRITE[path], data=form, method="POST",
+                headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                ok = 200 <= resp.status < 300
+            return self._json(200, {"ok": ok, "mode": "live", "action": action})
+        except Exception:
+            return self._json(502, {"ok": False, "error": "write upstream"})
 
     def _auth(self):
         """LDAP 로그인 검증 — helloMIS로 id/pw 확인. 미설정 시 데모 통과."""
@@ -80,7 +159,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not uid or not pw:
             return self._json(200, {"ok": False, "error": "empty"})
         if not (HELLOMIS_URL and HELLOMIS_KEY):
-            return self._json(200, {"ok": True, "id": uid, "name": uid, "mode": "dev"})
+            return self._json(200, {"ok": True, "id": uid, "name": uid, "mode": "dev"}, session_user=uid)
         ip = self.client_address[0] if self.client_address else "unknown"
         try:
             form = urllib.parse.urlencode({"id": uid, "pw": pw, "userip": ip}).encode()
@@ -106,10 +185,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             empno = m.get("employeeNo") or ""
         except Exception:
             pass
-        return self._json(200, {"ok": True, "id": uid, "name": name, "dept": dept, "employeeNo": empno, "mode": "hellomis"})
+        return self._json(200, {"ok": True, "id": uid, "name": name, "dept": dept, "employeeNo": empno, "mode": "hellomis"}, session_user=uid)
 
-    def _json(self, status, obj):
-        self._reply(status, "application/json; charset=utf-8", json.dumps(obj, ensure_ascii=False).encode())
+    def _json(self, status, obj, session_user=None):
+        data = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        if session_user:
+            self.send_header("Set-Cookie", "cafeadm_sess=%s; HttpOnly; SameSite=Strict; Path=/; Max-Age=%d" % (_make_session(session_user), SESSION_TTL))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _trend(self):
         """실시간 트렌드 키워드 중계 — adm-table. loginToken은 서버 env로만 주입."""
@@ -179,4 +265,5 @@ if __name__ == "__main__":
     with http.server.ThreadingHTTPServer(("0.0.0.0", PORT), Handler) as httpd:
         print(f"cafe ADM 서빙: http://0.0.0.0:{PORT}/  (dist={DIST}, api→{UPSTREAM})")
         print("[i] /api=GET /popular/* 만, /img=daum CDN 호스트만 허용. 접근 인증은 리버스 프록시에서.")
+        print(f"[i] 쓰기(/write/popular/*): 세션 필수 · {'실반영(live)' if WRITE_ENABLED else 'dry-run(미반영)'} · env CAFEADM_WRITE_ENABLED 로 전환")
         httpd.serve_forever()
