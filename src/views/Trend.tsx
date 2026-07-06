@@ -14,9 +14,14 @@ import { SmartThumb } from '../SmartThumb';
 import { PageHeader } from './PageHeader';
 import { fmt, emojiThumb } from './shared';
 import {
-  fetchDailyArticles, fetchTrend, trendYmdhCandidates, deriveTrendKeywords,
+  fetchDailyArticles, fetchPastArticles, weeklyAggdtCandidates, monthlyAggdtCandidates,
+  fetchTrend, trendYmdhCandidates, deriveTrendKeywords, matchArticlesByKeyword,
   type ApiArticle, type TrendData, type TrendTerm,
 } from '../api';
+
+// 검색 풀에 출처(실시간/주간/월간) 태그를 붙여 어디서 유행 중인 글인지 표시
+type CorpusArticle = ApiArticle & { period: '실시간' | '주간' | '월간' };
+const PERIOD_VARIANT: Record<CorpusArticle['period'], 'green' | 'blue' | 'purple'> = { 실시간: 'green', 주간: 'blue', 월간: 'purple' };
 
 // ── 카페 트렌드 (실시간 트렌드 키워드) ──
 // adm-table /realtime-trend(serve.py /trend 중계) 의 SELECTION 랭킹(20)을 그대로 노출.
@@ -28,11 +33,14 @@ const emo = ['📰', '🔥', '💬', '📸', '⚡', '🎬', '📝', '❗'];
 const pal: [string, string][] = [['#EAF0F7', '#D3E2F0'], ['#FFF1E6', '#FBE0C8'], ['#FCE7E9', '#F6D3D8'], ['#F0ECFB', '#DFD7F4'], ['#EAF7EE', '#D5EEDD']];
 const kwThumb = (i: number) => emojiThumb(emo[i % emo.length], pal[i % pal.length][0], pal[i % pal.length][1]);
 
-const FALLBACK: ApiArticle[] = [
-  { rnum: 1, grpcode: 'a', grpid: '', fldid: 'A', dataid: '1', title: '손흥민 선제골 직관 후기 모음', cafe: '축구사랑', viewcnt: 65100, cmtcnt: 540, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'a/A/1' },
-  { rnum: 2, grpcode: 'b', grpid: '', fldid: 'B', dataid: '2', title: '손흥민 인터뷰 번역본', cafe: '樂soccer', viewcnt: 42000, cmtcnt: 210, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'b/B/2' },
-  { rnum: 3, grpcode: 'c', grpid: '', fldid: 'C', dataid: '3', title: '자취요리 초간단 레시피 정리', cafe: '자취생', viewcnt: 38000, cmtcnt: 180, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'c/C/3' },
-  { rnum: 4, grpcode: 'd', grpid: '', fldid: 'D', dataid: '4', title: '자취요리 밀프렙 일주일치', cafe: '자취생', viewcnt: 29000, cmtcnt: 90, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'd/D/4' },
+// 인기글 corpus에 없는 검색어(트렌드는 검색어 기반이라 상당수 미커버)는 카페 통합검색으로 연결
+const cafeSearchUrl = (kw: string) => `https://search.daum.net/search?w=cafe&q=${encodeURIComponent(kw)}`;
+
+const FALLBACK: CorpusArticle[] = [
+  { rnum: 1, grpcode: 'a', grpid: '', fldid: 'A', dataid: '1', title: '손흥민 선제골 직관 후기 모음', cafe: '축구사랑', viewcnt: 65100, cmtcnt: 540, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'a/A/1', period: '실시간' },
+  { rnum: 2, grpcode: 'b', grpid: '', fldid: 'B', dataid: '2', title: '손흥민 인터뷰 번역본', cafe: '樂soccer', viewcnt: 42000, cmtcnt: 210, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'b/B/2', period: '주간' },
+  { rnum: 3, grpcode: 'c', grpid: '', fldid: 'C', dataid: '3', title: '자취요리 초간단 레시피 정리', cafe: '자취생', viewcnt: 38000, cmtcnt: 180, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'c/C/3', period: '월간' },
+  { rnum: 4, grpcode: 'd', grpid: '', fldid: 'D', dataid: '4', title: '자취요리 밀프렙 일주일치', cafe: '자취생', viewcnt: 29000, cmtcnt: 90, img: '', link: '#', status: '', regdt: '', nickname: '', permlink: 'd/D/4', period: '월간' },
 ];
 
 const COL = { rank: 36, delta: 66, mention: 96, actions: 92 } as const;
@@ -53,22 +61,29 @@ function derivedAsTerms(arts: ApiArticle[]): TrendTerm[] {
 
 export function Trend() {
   const [trend, setTrend] = useState<TrendData | null>(null);
-  const [corpus, setCorpus] = useState<ApiArticle[] | null>(null);
+  const [corpus, setCorpus] = useState<CorpusArticle[] | null>(null);
   const [mode, setMode] = useState<'live' | 'derived' | 'mock' | 'loading'>('loading');
   const [sel, setSel] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     setMode('loading'); setSel(null);
-    // 트렌드 랭킹 + 대표 인기글 corpus를 병렬로
+    const tag = (arr: ApiArticle[], period: CorpusArticle['period']): CorpusArticle[] => arr.map((a) => ({ ...a, period }));
+    // 트렌드 랭킹 + 검색 풀(실시간·주간·월간 인기글)을 병렬로 수집
     Promise.all([
       fetchTrend(trendYmdhCandidates()).catch(() => null),
-      fetchDailyArticles({ size: 100 }).catch(() => [] as ApiArticle[]),
-    ]).then(([t, arts]) => {
+      fetchDailyArticles({ size: 300 }).catch(() => [] as ApiArticle[]),
+      fetchPastArticles('weekly', weeklyAggdtCandidates(), 200).then((r) => r.articles).catch(() => [] as ApiArticle[]),
+      fetchPastArticles('monthly', monthlyAggdtCandidates(), 200).then((r) => r.articles).catch(() => [] as ApiArticle[]),
+    ]).then(([t, daily, weekly, monthly]) => {
       if (!alive) return;
-      setCorpus(arts.length ? arts : null);
+      // 실시간 우선으로 병합 후 permlink 기준 중복 제거(같은 글은 가장 실시간에 가까운 출처로)
+      const merged = [...tag(daily, '실시간'), ...tag(weekly, '주간'), ...tag(monthly, '월간')];
+      const seen = new Set<string>();
+      const pool = merged.filter((a) => (seen.has(a.permlink) ? false : (seen.add(a.permlink), true)));
+      setCorpus(pool.length ? pool : null);
       if (t && t.selection.length) { setTrend(t); setMode('live'); }
-      else if (arts.length) { setTrend(null); setMode('derived'); }
+      else if (pool.length) { setTrend(null); setMode('derived'); }
       else { setTrend(null); setMode('mock'); }
     });
     return () => { alive = false; };
@@ -81,7 +96,7 @@ export function Trend() {
   );
   const black = trend?.black ?? [];
   const keyLabel = trend?.key ? `${trend.key.slice(0, 4)}-${trend.key.slice(4, 6)}-${trend.key.slice(6, 8)} ${trend.key.slice(8, 10)}시` : '';
-  const articlesFor = (w: string) => data.filter((a) => a.title.includes(w)).sort((a, b) => b.viewcnt - a.viewcnt).slice(0, 8);
+  const articlesFor = (w: string) => matchArticlesByKeyword(w, data, 8);
 
   const headerCell = (label: string, width?: number, end = false) =>
     width ? <HStack width={width} justify={end ? 'end' : 'start'}><Text type="label" color="secondary">{label}</Text></HStack>
@@ -131,16 +146,28 @@ export function Trend() {
                   {open && (
                     <Section variant="muted" padding={4}>
                       <VStack gap={3}>
-                        <Text weight="bold">🔥 “{o.term}” 대표 인기글 {arts.length}건</Text>
+                        <HStack gap={2} vAlign="center" justify="between" wrap="wrap">
+                          <HStack gap={2} vAlign="center" wrap="wrap">
+                            <Text weight="bold">🔥 “{o.term}” 관련 유행글 {arts.length}건</Text>
+                            <Text type="supporting" color="secondary">실시간 · 주간 · 월간 인기글에서 매칭</Text>
+                          </HStack>
+                          <Button label="카페에서 검색" variant="ghost" size="sm" onClick={() => window.open(cafeSearchUrl(o.term), '_blank')} />
+                        </HStack>
                         {arts.length === 0
-                          ? <Text type="supporting" color="secondary">현재 인기글 corpus에서 “{o.term}” 관련 글을 찾지 못했습니다.</Text>
+                          ? <VStack gap={2}>
+                              <Text type="supporting" color="secondary">인기글(실시간·주간·월간) 상위에는 “{o.term}” 관련 글이 아직 없습니다. 트렌드는 검색어 기반이라 인기글과 다를 수 있어요.</Text>
+                              <HStack><Button label={`카페에서 “${o.term}” 검색하기`} variant="secondary" size="sm" onClick={() => window.open(cafeSearchUrl(o.term), '_blank')} /></HStack>
+                            </VStack>
                           : <Grid columns={{ minWidth: 200 }} gap={3}>
                               {arts.map((a, j) => (
                                 <Card key={a.permlink} padding={3}>
                                   <VStack gap={2} height="100%">
                                     <SmartThumb src={a.img} fallback={kwThumb(j)} alt={a.title} label={a.title}
                                       onClick={() => a.link && a.link !== '#' && window.open(a.link, '_blank')} style={{ width: '100%', height: 'auto' }} />
-                                    <HStack gap={1} vAlign="center"><Badge variant={j < 3 ? 'red' : 'neutral'} label={`${j + 1}위`} /></HStack>
+                                    <HStack gap={1} vAlign="center" wrap="wrap">
+                                      <Badge variant={j < 3 ? 'red' : 'neutral'} label={`${j + 1}위`} />
+                                      <Badge variant={PERIOD_VARIANT[a.period]} label={a.period} />
+                                    </HStack>
                                     <StackItem size="fill"><Text weight="medium" maxLines={2}>{a.title}</Text></StackItem>
                                     <HStack gap={2} wrap="wrap">
                                       <Text type="supporting" color="accent" maxLines={1}>{a.cafe}</Text>

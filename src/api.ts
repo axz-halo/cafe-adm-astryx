@@ -162,6 +162,41 @@ export async function fetchTrend(candidates: string[]): Promise<TrendData | null
   return null;
 }
 
+// ── 트렌드 키워드 → 관련 인기글 매핑 ──
+// 트렌드 검색어는 축약형이 많아(하닉→하이닉스, 삼전→삼성전자) 제목 정확 일치만으로는 놓친다.
+// 제목 정확 포함 > 영문 대소문자 무시 > 카페명 포함 > (2~4자) 단어 내 순서부분 매칭 순으로 점수화.
+const wordsOf = (s: string): string[] => s.match(/[가-힣A-Za-z0-9]+/g) ?? [];
+
+// keyword의 글자가 순서대로 word 안에 존재(축약어). 길이차가 과하면 오탐이라 제외.
+function isSubsequence(kw: string, word: string): boolean {
+  if (word.length < kw.length || word.length > kw.length + 3) return false;
+  let i = 0;
+  for (const ch of word) { if (ch === kw[i]) i++; if (i === kw.length) return true; }
+  return false;
+}
+
+export function scoreArticleForKeyword(kw: string, a: { title: string; cafe: string }): number {
+  const k = kw.trim();
+  if (!k) return 0;
+  if (a.title.includes(k)) return 4;                                   // 제목 정확 포함
+  if (/[A-Za-z]/.test(k) && a.title.toLowerCase().includes(k.toLowerCase())) return 3; // 영문 대소문자 무시
+  if (a.cafe.includes(k)) return 2;                                    // 카페명 포함
+  if (k.length >= 2 && k.length <= 4) {                                // 축약어 → 단어 내 순서부분 매칭
+    for (const w of wordsOf(a.title)) if (isSubsequence(k, w)) return 1.5;
+  }
+  return 0;
+}
+
+// corpus에서 키워드와 관련된 글을 점수·조회수 순으로 반환
+export function matchArticlesByKeyword<T extends { title: string; cafe: string; viewcnt: number }>(kw: string, corpus: T[], limit = 8): T[] {
+  return corpus
+    .map((a) => ({ a, s: scoreArticleForKeyword(kw, a) }))
+    .filter((x) => x.s > 0)
+    .sort((x, y) => y.s - x.s || y.a.viewcnt - x.a.viewcnt)
+    .slice(0, limit)
+    .map((x) => x.a);
+}
+
 // ── 트렌드 파생(폴백) — /trend 불가 시 실시간 인기글 제목 키워드 빈도 ──
 const STOP = new Set(['그리고', '하는', '있는', '없는', '너무', '진짜', '오늘', '근황', 'the', 'jpg', 'twt', 'gif', 'feat', '이거', '이건', '근데', '해서', '하고', '보고', '보는', '있다', '했다']);
 export function deriveTrendKeywords(articles: ApiArticle[], limit = 20): { w: string; count: number; views: number }[] {
