@@ -97,38 +97,40 @@ export function Triage({ items, categories, processed, total, counts, onExpose, 
       {/* 마스터(큐 리스트) · 디테일(프리뷰) */}
       <HStack gap={4} vAlign="start" wrap="wrap">
         <StackItem size="fill">
-          <Card padding={0}>
-            <List density="compact" hasDividers header={
-              <HStack gap={2} vAlign="center"><Heading level={4}>콘텐츠 큐</Heading><Text type="supporting" color="secondary">{queue.length}건 대기</Text></HStack>
-            }>
-              {queue.map((a, i) => (
-                <ListItem key={a.r} label={a.title}
-                  isSelected={!selectMode && i === curIdx}
-                  onClick={() => (selectMode ? toggleCheck(a.r) : setSelIdx(i))}
-                  startContent={<Thumbnail src={a.thumb} alt={a.title} label={a.title} style={{ width: 40, height: 40 }} />}
-                  description={`${a.cafe} · UV ${a.uv.toLocaleString()}`}
-                  endContent={
-                    <HStack gap={1} vAlign="center" wrap="wrap">
-                      {a.cat && <Badge variant="cyan" label={a.cat} />}
-                      {a.flags.map((f) => <Badge key={f} variant="yellow" label={f} />)}
-                      {selectMode && <Badge variant={checked.has(a.r) ? 'blue' : 'neutral'} label={checked.has(a.r) ? '✓ 선택됨' : '선택'} />}
-                    </HStack>
-                  }
-                />
-              ))}
-            </List>
-            {queue.length === 0 && <Card padding={6}><Text type="supporting" color="secondary">이 패스의 대기 항목이 없습니다 — 다음 패스로 이동하세요.</Text></Card>}
-          </Card>
+          <VStack gap={2}>
+            <HStack gap={2} vAlign="center"><Heading level={4}>콘텐츠 큐</Heading><Text type="supporting" color="secondary">{queue.length}건 대기</Text></HStack>
+            <Card padding={0}>
+              <List density="balanced" hasDividers>
+                {queue.map((a, i) => (
+                  <ListItem key={a.r} label={a.title}
+                    isSelected={!selectMode && i === curIdx}
+                    onClick={() => (selectMode ? toggleCheck(a.r) : setSelIdx(i))}
+                    startContent={<Thumbnail src={a.thumb} alt={a.title} label={a.title} style={{ width: 44, height: 44 }} />}
+                    description={`${a.cafe} · UV ${a.uv.toLocaleString()}`}
+                    endContent={
+                      <HStack gap={1} vAlign="center" wrap="wrap">
+                        {a.cat && <Badge variant="cyan" label={a.cat} />}
+                        {a.flags.map((f) => <Badge key={f} variant="yellow" label={f} />)}
+                        {selectMode && <Badge variant={checked.has(a.r) ? 'blue' : 'neutral'} label={checked.has(a.r) ? '✓ 선택됨' : '선택'} />}
+                      </HStack>
+                    }
+                  />
+                ))}
+              </List>
+              {queue.length === 0 && <Card padding={6}><Text type="supporting" color="secondary">이 패스의 대기 항목이 없습니다 — 다음 패스로 이동하세요.</Text></Card>}
+            </Card>
+          </VStack>
         </StackItem>
 
         {/* 프리뷰 패널 — 액션이 항상 같은 위치에 고정 */}
         {cur && (
-          <Card padding={4} width={400}>
+          <VStack gap={2} width={400}>
+            <HStack gap={2} vAlign="center">
+              <Heading level={4}>미리보기</Heading>
+              <Text type="supporting" color="secondary">{curIdx + 1} / {queue.length}</Text>
+            </HStack>
+            <Card padding={4}>
             <VStack gap={3}>
-              <HStack gap={2} vAlign="center">
-                <Heading level={4}>미리보기</Heading>
-                <Text type="supporting" color="secondary">{curIdx + 1} / {queue.length}</Text>
-              </HStack>
               <Thumbnail src={cur.thumb} alt={cur.title} label={cur.title} style={{ width: '100%', height: 'auto' }} />
               <VStack gap={1}>
                 <Text weight="semibold">{cur.title}</Text>
@@ -162,7 +164,8 @@ export function Triage({ items, categories, processed, total, counts, onExpose, 
                 </HStack>
               </VStack>
             </VStack>
-          </Card>
+            </Card>
+          </VStack>
         )}
       </HStack>
     </VStack>
