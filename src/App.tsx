@@ -590,13 +590,26 @@ function Soon({ title }: { title: string }) {
   );
 }
 
+const readSession = (k: string): string | null => { try { return sessionStorage.getItem(k); } catch { return null; } };
+
 export default function App() {
-  const [user, setUser] = useState<string | null>(null);
+  const [user, setUser] = useState<string | null>(() => readSession('cafeadm_user'));
+  const [authMode, setAuthMode] = useState<string | null>(() => readSession('cafeadm_authmode'));
   const [view, setView] = useState('popular');
   const isFill = view === 'popular' || view === 'category';
 
-  // 로그인 게이트 — 사내 SSO (login-sso 템플릿)
-  if (!user) return <LoginSSO onLogin={setUser} />;
+  // 세션 지속 — 새로고침해도 로그인 유지(sessionStorage, 탭 종료 시 만료)
+  const handleLogin = (id: string, mode?: string) => {
+    try { sessionStorage.setItem('cafeadm_user', id); sessionStorage.setItem('cafeadm_authmode', mode ?? ''); } catch { /* noop */ }
+    setUser(id); setAuthMode(mode ?? null);
+  };
+  const handleLogout = () => {
+    try { sessionStorage.removeItem('cafeadm_user'); sessionStorage.removeItem('cafeadm_authmode'); } catch { /* noop */ }
+    setUser(null); setAuthMode(null);
+  };
+
+  // 로그인 게이트 — 사내 LDAP(helloMIS). 미구성 시 데모(미검증) 모드.
+  if (!user) return <LoginSSO onLogin={handleLogin} />;
 
   return (
     <AppShell
@@ -619,8 +632,11 @@ export default function App() {
             </SideNavSection>
           ))}
           <SideNavSection title="계정">
-            <SideNavItem label={`박상욱 · SUPERADMIN`} icon={UserCircleIcon} endContent={<Badge variant="neutral" label={user} />} />
-            <SideNavItem label="로그아웃" icon={ArrowRightStartOnRectangleIcon} onClick={() => setUser(null)} />
+            <SideNavItem label={`${user} · SUPERADMIN`} icon={UserCircleIcon}
+              endContent={authMode === 'hellomis'
+                ? <Badge variant="green" label="LDAP" />
+                : <Badge variant="yellow" label="데모(미검증)" />} />
+            <SideNavItem label="로그아웃" icon={ArrowRightStartOnRectangleIcon} onClick={handleLogout} />
           </SideNavSection>
         </SideNav>
       }

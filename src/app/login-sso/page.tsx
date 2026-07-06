@@ -19,7 +19,7 @@ const TAGLINES = [
 // 사내 인증 — serve.py /auth 프록시가 helloMIS(LDAP)로 id·pw 검증.
 // serve.py에 CAFEADM_HELLOMIS_URL/KEY 설정 시 실검증, 미설정 시 데모 통과.
 // /auth 자체가 없는 정적 배포(예: GitHub Pages)에서는 데모 통과로 폴백.
-async function authenticate(ldapId: string, password: string): Promise<boolean> {
+async function authenticate(ldapId: string, password: string): Promise<{ ok: boolean; mode: string }> {
   try {
     const res = await fetch('/auth', {
       method: 'POST',
@@ -28,13 +28,14 @@ async function authenticate(ldapId: string, password: string): Promise<boolean> 
     });
     if (!res.ok) throw new Error('no-backend');
     const data = await res.json();
-    return !!data.ok;
+    return { ok: !!data.ok, mode: String(data.mode ?? 'dev') };
   } catch {
-    return ldapId.trim().length > 0 && password.length > 0; // 백엔드 없음 → 데모
+    // /auth 없음(정적 배포 등) → 데모 통과
+    return { ok: ldapId.trim().length > 0 && password.length > 0, mode: 'demo' };
   }
 }
 
-export default function LoginSSO({ onLogin }: { onLogin: (id: string) => void }) {
+export default function LoginSSO({ onLogin }: { onLogin: (id: string, mode?: string) => void }) {
   const [ldapId, setLdapId] = useState('');
   const [password, setPassword] = useState('');
   const [failed, setFailed] = useState(false);
@@ -53,8 +54,8 @@ export default function LoginSSO({ onLogin }: { onLogin: (id: string) => void })
     if (!canSubmit) { setFailed(true); return; }
     setIsLoading(true);
     setFailed(false);
-    const ok = await authenticate(ldapId, password);
-    if (ok) { onLogin(ldapId.trim()); }
+    const { ok, mode } = await authenticate(ldapId, password);
+    if (ok) { onLogin(ldapId.trim(), mode); }
     else { setFailed(true); setIsLoading(false); }
   };
 
