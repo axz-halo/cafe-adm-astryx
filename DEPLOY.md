@@ -15,8 +15,14 @@
 |---|---|
 | `CAFEADM_HELLOMIS_URL` | helloMIS 베이스 URL (`hellomis.server.url`) |
 | `CAFEADM_HELLOMIS_KEY` | helloMIS authkey (`hellomis.auth.key`, 시크릿) |
+| `CAFEADM_TREND_TOKEN` | 실시간 트렌드(adm-table) loginToken JWT (시크릿) — 카페 트렌드 실데이터용 |
+| `CAFEADM_TREND_URL` | (선택) 트렌드 업스트림. 기본 `https://adm-table.onkakao.net/realtime-trend` |
 
-미설정 시 로그인은 데모 통과(빈 값만 거부). 운영에서는 반드시 설정.
+미설정 시: 로그인은 데모 통과(빈 값만 거부), 카페 트렌드는 실시간 인기글 제목 파생으로 폴백. 운영에서는 반드시 설정.
+
+> ⚠️ `CAFEADM_TREND_TOKEN` 은 SUPERADMIN JWT 이며 **만료(exp)** 가 있음. 만료 시
+> 카페 트렌드가 폴백 모드로 전환되므로 토큰 갱신·주입 절차를 운영에 마련할 것.
+> 절대 레포/이미지/로그에 하드코딩하지 말 것(env 전용).
 
 ## A. Docker (권장 — 사내 컨테이너 플랫폼/idock/k8s)
 ```bash
