@@ -42,6 +42,7 @@ import { Console360 } from './views/Console360';
 import { PageHeader } from './views/PageHeader';
 import { Triage } from './views/Triage';
 import LoginSSO from './app/login-sso/page';
+import { Banner as AstryxBanner } from '@astryxdesign/core/Banner';
 import { fetchDailyArticles } from './api';
 import { SmartThumb } from './SmartThumb';
 
@@ -356,6 +357,14 @@ function Popular() {
     return () => { alive = false; };
   }, [sex, age, limit, reloadKey]);
 
+  // 라이브 유지 — 3분마다 + 탭 포커스 시 최신 인기글 재조회
+  useEffect(() => {
+    const iv = setInterval(() => setReloadKey((k) => k + 1), 180000);
+    const onFocus = () => setReloadKey((k) => k + 1);
+    window.addEventListener('focus', onFocus);
+    return () => { clearInterval(iv); window.removeEventListener('focus', onFocus); };
+  }, []);
+
   const sourceAll = live ?? ARTICLES_ALL;
   const allCafes = useMemo(() => [...new Set(sourceAll.map((a) => a.cafe))], [sourceAll]);
   const chips = dataMode === 'live' ? allCafes.slice(0, 8) : CHIP_CAFES;
@@ -554,6 +563,10 @@ function Popular() {
       content={
         <LayoutContent role="main" padding={5}>
           <VStack gap={4}>
+            {dataMode === 'mock' && (
+              <AstryxBanner status="warning" title="라이브 미연결 — 샘플 표시 중"
+                description="사내망 API(/api)에 연결되지 않아 아래는 실시간이 아닌 샘플 글입니다. 사내망 배포 서버(:8080)로 접속하면 실시간 인기글이 표시됩니다." />
+            )}
             {viewMode === 'triage' && (
               <Triage items={triageItems} categories={CATEGORIES}
                 processed={exposedCount + excludedCount + movedCount} total={sourceAll.length}
